@@ -20,14 +20,14 @@ Opsero's reference designs; the designs that use it are listed in
 
 | IP | Standard | User side | Lane(s) | Maturity (v0.1.0) |
 |---|---|---|---|---|
-| [`omac_10g`](docs/omac_10g.md) | 10GBASE-R (25GBASE-R with `SPEED` = 25) | 64-bit AXI-Stream @ 156.25 MHz (390.625 MHz) | 1 x 10.3125 (25.78125) Gb/s | **10GBASE-R hardware-proven** (ZCU106 + ConnectX-6 Dx: link, RoCE v2 traffic at 9.4-9.8 Gb/s, 0 errors); 3.5k LUT, +2.8 ns at 156.25 MHz on xczu7ev-2. 25GBASE-R: simulated, routed at 390.625 MHz on xcku5p-2 (+0.28 ns), not yet on hardware |
+| [`omac_10g`](docs/omac_10g.md) | 10GBASE-R (25GBASE-R with `SPEED` = 25) | 64-bit AXI-Stream @ 156.25 MHz (390.625 MHz) | 1 x 10.3125 (25.78125) Gb/s | **10GBASE-R hardware-proven** (ZCU106 + ConnectX-6 Dx: link, RoCE v2 traffic at 9.4-9.8 Gb/s, 0 errors); 3.5k LUT, +2.8 ns at 156.25 MHz on xczu7ev-2. 25GBASE-R: simulated, routed at 390.625 MHz on xcku5p-2 (+0.28 ns), not yet on hardware. v0.2.0-dev: optional [timestamp hooks](docs/omac_10g.md#timestamp-hooks) (`TS_EN`, start of frame at the 64B/66B block boundary, both directions, for IEEE 1588), simulated, not yet on hardware |
 | [`omac_40g`](docs/omac_40g.md) | 40GBASE-R4 (multi-lane distribution, alignment markers, BIP, deskew, lane reorder) | 256-bit AXI-Stream @ 156.25 MHz | 4 x 10.3125 Gb/s | **hardware-proven** (ZCU106 + ConnectX-6 Dx at 40GBASE-CR4: RoCE v2 at 38.7-39.2 Gb/s payload, PAUSE both ways, 0 FCS / block / BIP errors); 16.4k LUT, +1.57 ns at 156.25 MHz on xczu7ev-2 |
 | `omac_1g` | 1000BASE-X / SGMII | 8-bit | 1 x 1.25 Gb/s | planned, no date |
 | `omac_100g` | 100GBASE-R4 (RS-FEC) | 512-bit | 4 x 25.78125 Gb/s | planned, no date |
 
 | Transceiver wrapper | Family | Maturity (v0.1.0) |
 |---|---|---|
-| [`gt/omac_gt_usp_gth`](docs/gt_usp_gth.md) | UltraScale+ GTH, 64B/66B asynchronous gearbox (gtwizard_ultrascale, free); one lane (`omac_gt_usp_gth`) or four (`omac_gt_usp_gth_x4`, per-lane RX clocks) | **hardware-proven** with both IPs (ZCU106; `BIT_REVERSE` = 1 confirmed) |
+| [`gt/omac_gt_usp_gth`](docs/gt_usp_gth.md) | UltraScale+ GTH, 64B/66B asynchronous gearbox (gtwizard_ultrascale, free); one lane (`omac_gt_usp_gth`), four (`omac_gt_usp_gth_x4`, per-lane RX clocks), or four independent omac_10g lanes of one quad (`omac_gt_usp_gth_quad`, v0.2.0-dev, per-lane RX reset) | **hardware-proven** with both IPs (ZCU106; `BIT_REVERSE` = 1 confirmed); `_quad`: synthesised, not yet on hardware |
 | `gt/omac_gt_usp_gty` | UltraScale+ GTY | planned |
 
 The interface every IP implements is defined in [docs/interface.md](docs/interface.md). Hardware

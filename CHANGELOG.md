@@ -3,6 +3,46 @@
 All notable changes to opsero-ethernet-mac. One tag series for the repository; versions follow
 semantic versioning; `-dev` versions are work in progress, releases are tagged on `main`.
 
+## v0.2.0-dev (work in progress on `dev`)
+
+Work in progress; merged to `main` and tagged after hardware validation.
+
+### Added
+
+- **omac_10g timestamp hooks** (`TS_EN` = 1, `TS_W`): the start of every frame is time-stamped
+  at the 64B/66B block boundary of the transceiver interface. Transmit: `tx_ts_valid` (one per
+  frame, in transmit order, one cycle after the /S/ block was on `gt_tx_data`) with
+  `tx_ts_val` = the user's `tx_ts_in` of that cycle, `tx_ts_lane4` and `tx_ts_user` (0 for the
+  MAC's own PAUSE frames). Receive: `rx_ts_in` (in `gt_rx_clk`) sampled with the /S/ block on
+  `gt_rx_data` travels through the RX clock-crossing FIFO with the frame (`m_axis_rx_ts`,
+  `m_axis_rx_ts_lane4`, constant on every beat), so frames that are not delivered never show a
+  timestamp and a delivered frame always carries its own. Reference plane, lane-4 offset
+  (3.103 ns at 10G, 1.241 ns at 25G) and the transceiver latencies to the pins:
+  docs/omac_10g.md "Timestamp hooks". `TS_EN` = 0 (default): outputs 0, no logic added
+  (routed: same FF count as v0.1.0). Cost at `TS_W` = 32: +45 LUT, +22 LUTRAM, +336 FF; timing
+  met at 156.25 MHz (+3.139 ns, xczu7ev-2) and 390.625 MHz (+0.212 ns, xcku5p-2).
+- **gt/omac_gt_usp_gth_quad** + `omac_gen_gth_quad`: four channels of one quad as four
+  independent `omac_10g` lanes (one QPLL0, one TX user clock, one RX user clock per lane) with a
+  per-lane RX reset (`RXPMARESET` of that channel; `omac_gt_usp_gth_x4` resets all four lanes,
+  which takes the other links down when one port has no signal), per-lane readiness, loopback,
+  polarity and driver settings, QPLL / CDR lock status and the reference clock / 8
+  (`refclk_mon`) for a frequency monitor. `omac_gen_gth` takes an optional list of extra
+  gtwizard ports (default: none, the existing IPs are unchanged).
+- **Verification:** regression tests `10g_ts` and `10g_ts25` (31 tests in all): every transmit
+  timestamp against the position of its /S/ block in the wire capture decoded by the Python
+  model (`omac_ref.parse_capture` now reports the line of each /S/), the start lane and the
+  PAUSE flag; every receive timestamp = the transmit timestamp of the same frame + the channel
+  latency hand-computed from `tb_gt_chan` (3 cycles), constant on every beat; aborts,
+  underflows, line errors, oversize cuts, consumed PAUSE frames, back-to-back frames at the
+  minimum gap; at 10G and 25G. OOC jobs `omac_10g_ts_zu7ev`, `omac_10g_ts_25g_ku5p` and
+  `omac_10g_quad_gth_zu7ev` (four omac_10g with hooks on the quad wrapper; `synth_ooc.tcl`
+  extra `gtquad`).
+
+### Not yet validated
+
+- The hooks and the quad wrapper on hardware (the first design to use them: an Opsero
+  SyncE + PTP reference design for the quad SFP28 FMC on a ZCU106).
+
 ## v0.1.0 (2026-11-05)
 
 First release: omac_10g and omac_40g with the UltraScale+ GTH wrappers, the shared interface
