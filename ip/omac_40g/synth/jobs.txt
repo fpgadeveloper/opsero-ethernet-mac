@@ -1,0 +1,6 @@
+# omac_40g out-of-context jobs (name | top | generics | flow: lint|synth|route | period ns | part | extra)
+# clk and the four gt_rx_clk get the period, as asynchronous clocks (scripts/synth_ooc.tcl).
+omac_40g_lint      | omac_40g          |                   | lint  | 6.4   | xczu7ev-ffvc1156-2-e |
+omac_40g_zu7ev     | omac_40g          |                   | route | 6.4   | xczu7ev-ffvc1156-2-e |
+omac_40g_nopause   | omac_40g          | PAUSE_EN=0        | synth | 6.4   | xczu7ev-ffvc1156-2-e |
+omac_40g_gth_zu7ev | omac_40g_gth_top  |                   | synth | 6.4   | xczu7ev-ffvc1156-2-e | gt

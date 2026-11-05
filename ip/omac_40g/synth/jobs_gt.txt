@@ -1,0 +1,2 @@
+# omac_40g + the four-lane GTH wrapper and gtwizard (example channels X0Y14 X0Y13 X0Y15 X0Y12 of one xczu7ev quad)
+omac_40g_gth_zu7ev | omac_40g_gth_top  |                   | synth | 6.4   | xczu7ev-ffvc1156-2-e | gt

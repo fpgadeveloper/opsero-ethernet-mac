@@ -1,0 +1,3 @@
+# omac_10g timing re-check after the 25G pipeline stages (RX verdict, TX FCS merge)
+omac_10g_zu7ev     | omac_10g          |                   | route | 6.4   | xczu7ev-ffvc1156-2-e |
+omac_10g_25g_ku5p  | omac_10g          | SPEED=25          | route | 2.56  | xcku5p-ffvb676-2-e   |

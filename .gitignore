@@ -1,0 +1,18 @@
+# simulation / synthesis build products
+sim/build/
+ip/*/sim/build/
+ip/*/synth/build/
+gt/*/build/
+synth/build/
+.Xil/
+*.jou
+*.log
+*.pb
+*.wdb
+*.str
+xsim.dir/
+__pycache__/
+*.pyc
+
+# documentation build
+docs/_build/
