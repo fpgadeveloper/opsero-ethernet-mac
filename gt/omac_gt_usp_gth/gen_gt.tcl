@@ -1,14 +1,16 @@
 # SPDX-License-Identifier: MIT
 #
 # gen_gt.tcl - create the gtwizard_ultrascale IP (free, no license) used by
-# omac_gt_usp_gth (one GTH channel, omac_10g) and omac_gt_usp_gth_x4 (four GTH
-# channels of one quad, omac_40g): 10GBASE-R lanes, 64B/66B asynchronous
-# gearbox, 64-bit user data per lane at 156.25 MHz.
+# omac_gt_usp_gth (one GTH channel, omac_10g), omac_gt_usp_gth_x4 (four GTH
+# channels of one quad, omac_40g) and omac_gt_usp_gth_quad (four GTH channels of
+# one quad as four independent omac_10g lanes): 10GBASE-R lanes, 64B/66B
+# asynchronous gearbox, 64-bit user data per lane at 156.25 MHz.
 #
 # In a Vivado project or non-project session:
 #   source gt/omac_gt_usp_gth/gen_gt.tcl
 #   omac_gen_gth <ip_dir> ?channels? ?freerun_mhz? ?module_name?
 #   omac_gen_gth_x4 <ip_dir> ?channels? ?freerun_mhz? ?module_name?
+#   omac_gen_gth_quad <ip_dir> ?channels? ?freerun_mhz? ?module_name?
 # `channels` is the board's GT channel site (e.g. X0Y14) or a list of four sites of
 # one quad in lane order (lane 0 first); the first one is the master (its TXOUTCLK makes the shared TX user clock) and gives the
 # reference clock (MGTREFCLK0 of the quad). With more than one channel the RX
@@ -24,7 +26,10 @@
 # X0Y14 X0Y13 X0Y15 X0Y12 for omac_gen_gth_x4: example sites of one xczu7ev
 # quad) exist only so the repository's own synthesis jobs run. Other defaults:
 # free-running clock 100 MHz, module name omac_gth_10g (omac_gen_gth_x4:
-# omac_gth_40g); the wrappers instantiate the module by that name.
+# omac_gth_40g, omac_gen_gth_quad: omac_gth_quad); the wrappers instantiate the
+# module by that name. omac_gen_gth_quad = omac_gen_gth_x4 plus the per-channel
+# ports rxpmareset_in, rxresetdone_out, rxcdrlock_out and qpll0lock_out (the
+# per-lane RX resets of omac_gt_usp_gth_quad).
 #
 # Settings (checked against the generated IP, Vivado 2025.2, gtwizard_ultrascale 1.7):
 #   preset GTH-10GBASE-R: line rate 10.3125 Gb/s, QPLL0 (FBDIV 66, REFCLK_DIV 1),
@@ -36,7 +41,7 @@
 #
 # Copyright (c) 2026 Opsero Electronic Design Inc.
 
-proc omac_gen_gth {ip_dir {channel X0Y14} {freerun_mhz 100} {name omac_gth_10g}} {
+proc omac_gen_gth {ip_dir {channel X0Y14} {freerun_mhz 100} {name omac_gth_10g} {extra_ports {}}} {
     set master [lindex $channel 0]
     set rxuc [expr {[llength $channel] > 1 ? "EXAMPLE_DESIGN" : "CORE"}]
     file mkdir $ip_dir
@@ -54,7 +59,7 @@ proc omac_gen_gth {ip_dir {channel X0Y14} {freerun_mhz 100} {name omac_gth_10g}}
         CONFIG.FREERUN_FREQUENCY         $freerun_mhz \
         CONFIG.LOCATE_TX_USER_CLOCKING   CORE \
         CONFIG.LOCATE_RX_USER_CLOCKING   $rxuc \
-        CONFIG.ENABLE_OPTIONAL_PORTS     {loopback_in rxpolarity_in txpolarity_in txdiffctrl_in txpostcursor_in txprecursor_in rxlpmen_in gtpowergood_out rxpmaresetdone_out txpmaresetdone_out} \
+        CONFIG.ENABLE_OPTIONAL_PORTS     [concat {loopback_in rxpolarity_in txpolarity_in txdiffctrl_in txpostcursor_in txprecursor_in rxlpmen_in gtpowergood_out rxpmaresetdone_out txpmaresetdone_out} $extra_ports] \
     ] $ip
     # the settings the wrapper relies on
     foreach {k v} {TX_LINE_RATE 10.3125 RX_LINE_RATE 10.3125 TX_REFCLK_FREQUENCY 156.25 \
@@ -74,6 +79,11 @@ proc omac_gen_gth {ip_dir {channel X0Y14} {freerun_mhz 100} {name omac_gth_10g}}
 proc omac_gen_gth_x4 {ip_dir {channels {X0Y14 X0Y13 X0Y15 X0Y12}} {freerun_mhz 100} {name omac_gth_40g}} {
     if {[llength $channels] != 4} { error "omac_gen_gth_x4: four channels expected" }
     return [omac_gen_gth $ip_dir $channels $freerun_mhz $name]
+}
+
+proc omac_gen_gth_quad {ip_dir {channels {X0Y14 X0Y13 X0Y15 X0Y12}} {freerun_mhz 100} {name omac_gth_quad}} {
+    if {[llength $channels] != 4} { error "omac_gen_gth_quad: four channels expected" }
+    return [omac_gen_gth $ip_dir $channels $freerun_mhz $name {rxpmareset_in rxresetdone_out rxcdrlock_out qpll0lock_out}]
 }
 
 if {![info exists ::omac_gen_gth_noauto] && [info exists argv] && [llength $argv] >= 2} {

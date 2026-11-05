@@ -2,3 +2,4 @@
 # clk and gt_rx_clk both get the period, as asynchronous clocks. extra "gt": generate the GTH
 # gtwizard IP (gt/omac_gt_usp_gth/gen_gt.tcl, example channel X0Y14) and synthesize it with the wrapper.
 omac_10g_gth_zu7ev | omac_10g_gth_top  |                   | synth | 6.4   | xczu7ev-ffvc1156-2-e | gt
+omac_10g_quad_gth_zu7ev | omac_10g_quad_gth_top | | route | 6.4 | xczu7ev-ffvc1156-2-e | gtquad

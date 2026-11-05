@@ -8,13 +8,15 @@
 # The IP is the directory the job list sits in (ip/<ip>/synth/jobs*.txt); its sources come
 # from ip/<ip>/rtl/<ip>.f, extra synthesis-only sources from ip/<ip>/synth/*.sv.
 # jobs.txt, one job per line ('#' = comment), fields separated by '|':
-#   name | top | generics (K=V ...) | flow: lint | synth | route | period ns | part | extra ("gt")
+#   name | top | generics (K=V ...) | flow: lint | synth | route | period ns | part | extra ("gt" | "gtquad")
 # Clocks: clk and every gt_rx_clk (omac_10g: one, omac_40g: four) get the period and are
 # asynchronous to each other.
 # "gt" jobs generate the GTH gtwizard IP with gt/omac_gt_usp_gth/gen_gt.tcl (omac_10g: one
 # example channel X0Y14; omac_40g: four example channels of one xczu7ev quad,
 # X0Y14 X0Y13 X0Y15 X0Y12) and
 # constrain the reference clock (refclk_p) to the period and freerun_clk to 10 ns.
+# "gtquad" jobs (omac_10g): omac_gen_gth_quad on the example quad (X0Y14 X0Y13 X0Y15 X0Y12)
+# with omac_gt_usp_gth_quad (four independent omac_10g lanes), clocks as for "gt".
 # Results: <out_dir>/results.csv (appended), <out_dir>/<name>_*.rpt.
 #
 # Copyright (c) 2026 Opsero Electronic Design Inc.
@@ -84,7 +86,7 @@ foreach line $lines {
     set extra [string trim [lindex $f 6]]
     set xdc [file join $out_dir "clk_${name}.xdc"]
     set fh [open $xdc w]
-    if {$extra eq "gt"} {
+    if {$extra eq "gt" || $extra eq "gtquad"} {
         puts $fh "create_clock -period $per -name refclk \[get_ports refclk_p\]"
         puts $fh "create_clock -period 10.0 -name freerun \[get_ports freerun_clk\]"
     } elseif {$ipn eq "omac_40g"} {
@@ -108,9 +110,12 @@ foreach line $lines {
         create_project -in_memory -part $part
         set_property target_language Verilog [current_project]
         foreach fn $srcs { read_verilog -sv $fn }
-        if {$extra eq "gt"} {
+        if {$extra eq "gt" || $extra eq "gtquad"} {
             set ipd [file join $out_dir ip_$name]
-            if {$ipn eq "omac_40g"} {
+            if {$extra eq "gtquad"} {
+                set ip [omac_gen_gth_quad $ipd {X0Y14 X0Y13 X0Y15 X0Y12} 100 omac_gth_quad]
+                set gtw omac_gt_usp_gth_quad.sv
+            } elseif {$ipn eq "omac_40g"} {
                 set ip [omac_gen_gth $ipd {X0Y14 X0Y13 X0Y15 X0Y12} 100 omac_gth_40g]
                 set gtw omac_gt_usp_gth_x4.sv
             } else {
