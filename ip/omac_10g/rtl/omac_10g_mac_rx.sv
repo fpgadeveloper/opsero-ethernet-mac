@@ -22,6 +22,12 @@
 // taken from e2 one more cycle later. The last beat of every frame therefore
 // leaves one cycle after the end word (through the pending-beat register) and
 // gets its tuser at the output register.
+// Timestamp hook: `xts` arrives with each column; the frame's start time is
+// the `xts` of the column with its /S/ (lane 0: the column with start + SFD;
+// lane 4: the column before the SFD column), with `m_ts_lane4` = 1 for a
+// lane-4 start. Both are held constant on every beat of the frame (`m_ts`,
+// `m_ts_lane4` next to `m_tdata`). Frames that are not delivered (MAC Control,
+// rx_enable = 0, nothing left after the FCS strip) never show a timestamp.
 //
 // Copyright (c) 2026 Opsero Electronic Design Inc.
 
@@ -31,7 +37,8 @@
 
 module omac_10g_mac_rx #(
     parameter int MIN_FRAME = 64,
-    parameter int MAX_FRAME = 9600
+    parameter int MAX_FRAME = 9600,
+    parameter int TS_W      = 1
 ) (
     input  wire logic        clk,
     input  wire logic        rst,
@@ -39,6 +46,7 @@ module omac_10g_mac_rx #(
     input  wire logic        xvalid,
     input  wire logic [63:0] xd,
     input  wire logic [7:0]  xc,
+    input  wire logic [TS_W-1:0] xts,
 
     input  wire logic        rx_enable,
     input  wire logic [47:0] mac_addr,
@@ -48,6 +56,8 @@ module omac_10g_mac_rx #(
     output logic [7:0]       m_tkeep,
     output logic             m_tlast,
     output logic             m_tuser,
+    output logic [TS_W-1:0]  m_ts = '0,
+    output logic             m_ts_lane4 = 1'b0,
 
     output logic             pause_ev,
     output logic [15:0]      pause_time,
@@ -117,6 +127,30 @@ endfunction
 wire start0 = xc[0] && xd[7:0] == XG_START && xc[7:1] == '0 && xd[63:56] == ETH_SFD;
 wire start4 = xc[4] && xd[39:32] == XG_START && xc[7:5] == '0;
 wire sfd4   = xc[3:0] == '0 && xd[31:24] == ETH_SFD;
+
+// start-of-frame time: s4_ts = the time of the last column with /S/ in lane 4
+// (used when the SFD follows in the next column), f_ts / f_l4 = the frame being
+// delivered. f_ts changes at the start column of the next frame, after the last
+// beat of the previous one has been registered into o_* (the pending tail beat
+// leaves in the cycle of that column at the latest).
+logic [TS_W-1:0] s4_ts = '0, f_ts = '0, o_ts = '0;
+logic            f_l4 = 1'b0, o_l4 = 1'b0;
+always_ff @(posedge clk) begin
+    if (xvalid && start4) s4_ts <= xts;
+    if (xvalid && (st == R_IDLE || st == R_PRE4)) begin
+        if (st == R_PRE4 && sfd4) begin
+            f_ts <= s4_ts;
+            f_l4 <= 1'b1;
+        end else if (start0) begin
+            f_ts <= xts;
+            f_l4 <= 1'b0;
+        end
+    end
+    o_ts       <= f_ts;
+    o_l4       <= f_l4;
+    m_ts       <= o_ts;
+    m_ts_lane4 <= o_l4;
+end
 
 always_ff @(posedge clk) begin
     logic          ov, runt, over, show, term, emit;

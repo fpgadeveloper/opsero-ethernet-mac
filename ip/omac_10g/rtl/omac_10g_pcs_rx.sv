@@ -8,6 +8,10 @@
 // block). Out-of-sequence or invalid blocks are replaced by the error column;
 // without block lock or with hi_ber the output is the Local Fault column.
 // One output column per valid input block, latency 4 valid blocks.
+// Timestamp hook: `ts_in` is sampled with every valid input block (the cycle
+// the block is on the transceiver interface) and travels with the block, so
+// `xts` is the value that was on `ts_in` when the block of the column now on
+// `xd`/`xc` arrived (constant ts_in = 0 when the hooks are off: no logic).
 //
 // Copyright (c) 2026 Opsero Electronic Design Inc.
 
@@ -18,13 +22,15 @@
 module omac_10g_pcs_rx #(
     parameter int SLIP_WAIT      = 256,
     parameter int BER_TIMER_CLKS = 19532,
-    parameter int BER_THRESH     = 16
+    parameter int BER_THRESH     = 16,
+    parameter int TS_W           = 1
 ) (
     input  wire logic        clk,
     input  wire logic        rst,
     input  wire logic        valid,
     input  wire logic [1:0]  hdr,
     input  wire logic [63:0] data,
+    input  wire logic [TS_W-1:0] ts_in,
 
     output wire logic        slip,
     output wire logic        block_lock,
@@ -33,6 +39,7 @@ module omac_10g_pcs_rx #(
     output logic             xvalid,
     output logic [63:0]      xd,
     output logic [7:0]       xc,
+    output logic [TS_W-1:0]  xts,
     output logic             ev_bad_block,
     output logic             ev_seq_error
 );
@@ -54,10 +61,12 @@ omac_ber_mon #(.TIMER_CLKS(BER_TIMER_CLKS), .THRESH(BER_THRESH)) u_ber (
 logic [63:0] dsc;
 logic [1:0]  hdr1 = '0;
 logic        v1 = 1'b0;
+logic [TS_W-1:0] ts1 = '0, ts2 = '0, cur_ts = '0;
 omac_descrambler u_dsc (.clk(clk), .en(valid), .din(data), .dout(dsc));
 always_ff @(posedge clk) begin
     v1 <= valid;
     if (valid) hdr1 <= hdr;
+    if (valid) ts1  <= ts_in;
     if (rst) v1 <= 1'b0;
 end
 
@@ -71,6 +80,7 @@ assign dec = dec66(hdr1, dsc);
 always_ff @(posedge clk) begin
     v2 <= v1;
     if (v1) begin
+        ts2 <= ts1;
         rt2 <= rtype_t'(dec[74:72]);
         c2  <= dec[71:64];
         d2  <= dec[63:0];
@@ -98,8 +108,10 @@ always_ff @(posedge clk) begin
         cur_rt <= rt2;
         cur_d  <= d2;
         cur_c  <= c2;
+        cur_ts <= ts2;
         if (cur_v) begin
             xvalid <= 1'b1;
+            xts    <= cur_ts;
             if (!up) begin
                 nst = RX_INIT;
                 xd  <= LF_D;

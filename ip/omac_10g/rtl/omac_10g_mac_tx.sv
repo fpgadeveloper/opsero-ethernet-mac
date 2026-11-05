@@ -17,6 +17,11 @@
 // with an error column (/E/ in every lane), ev_underflow pulses and the rest
 // of the frame is discarded. tuser (abort) on any beat does the same
 // (ev_abort).
+// Start of frame: `sof` pulses with the column that carries the frame's /S/
+// (on xd/xc in the same cycle), `sof_lane4` = /S/ in lane 4, `sof_user` = the
+// frame came from s_t* (0: a PAUSE frame of the MAC). Every frame that reaches
+// the columns gets exactly one /S/, so one `sof` (the timestamp hooks of
+// omac_10g count on it).
 //
 // Copyright (c) 2026 Opsero Electronic Design Inc.
 
@@ -50,6 +55,10 @@ module omac_10g_mac_tx #(
     output logic [63:0]      xd,
     output logic [7:0]       xc,
 
+    output logic             sof = 1'b0,
+    output logic             sof_lane4 = 1'b0,
+    output logic             sof_user = 1'b0,
+
     output logic             ev_frame,
     output logic             ev_pause,
     output logic             ev_underflow,
@@ -79,6 +88,7 @@ wire  [63:0] a_data  = (sel == A_PAUSE) ? pf_tdata : s_tdata;
 wire  [7:0]  a_keep  = (sel == A_PAUSE) ? pf_tkeep : s_tkeep;
 wire         a_last  = (sel == A_PAUSE) ? pf_tlast : s_tlast;
 wire         a_user  = (sel == A_USER) && s_tuser;
+wire         a_isu   = (sel == A_USER);        // the beat belongs to a user frame
 assign s_tready = (sel == A_USER) && a_ready;
 
 always_ff @(posedge clk) begin
@@ -107,7 +117,7 @@ always_ff @(posedge clk) begin
 end
 
 // ---------------- pad ----------------
-logic        p_valid = 1'b0, p_last = 1'b0, p_err = 1'b0;
+logic        p_valid = 1'b0, p_last = 1'b0, p_err = 1'b0, p_usr = 1'b0;
 logic [63:0] p_data;
 logic [3:0]  p_n;
 logic        p_ready;
@@ -151,6 +161,7 @@ always_ff @(posedge clk) begin
         p_valid <= 1'b1;
         p_data  <= a_data & keep_mask(n);
         p_err   <= a_user;
+        p_usr   <= a_isu;
         if (a_last && TX_PAD && (pcnt + 7'(n) < 7'd60)) begin
             if (pcnt + 7'd8 >= 7'd60) begin
                 p_n    <= 4'(60 - pcnt);
@@ -179,12 +190,12 @@ end
 // two stages: Q computes the CRC register after each word (the running state is a
 // one-cycle loop), F merges the inverted CRC of a last word into the data (from
 // registers, so the merge shifter is not behind the CRC network: 25G timing)
-logic        q_valid = 1'b0, q_last = 1'b0, q_err = 1'b0;
+logic        q_valid = 1'b0, q_last = 1'b0, q_err = 1'b0, q_usr = 1'b0;
 logic [63:0] q_data;
 logic [3:0]  q_n;
 logic [31:0] q_crc;
 logic        q_ready;
-logic        f_valid = 1'b0, f_last = 1'b0, f_err = 1'b0;
+logic        f_valid = 1'b0, f_last = 1'b0, f_err = 1'b0, f_usr = 1'b0;
 logic [63:0] f_data;
 logic [3:0]  f_n;
 logic        f_ready;
@@ -212,6 +223,7 @@ always_ff @(posedge clk) begin
         q_n     <= p_n;
         q_last  <= p_last;
         q_err   <= p_err;
+        q_usr   <= p_usr;
         q_crc   <= crc_new;
     end
     if (rst) begin
@@ -232,6 +244,7 @@ always_ff @(posedge clk) begin
     end else if (q_valid && q_ready) begin
         f_valid <= 1'b1;
         f_err   <= q_err;
+        f_usr   <= q_usr;
         if (!q_last) begin
             f_data <= q_data;
             f_n    <= 4'd8;
@@ -298,6 +311,7 @@ always_ff @(posedge clk) begin
     ev_frame     <= 1'b0;
     ev_underflow <= 1'b0;
     ev_abort     <= 1'b0;
+    sof          <= 1'b0;
     xd <= IDLE_D;
     xc <= 8'hFF;
     case (cst)
@@ -305,11 +319,17 @@ always_ff @(posedge clk) begin
             if (f_valid && gap >= gmin) begin
                 xd  <= S0_D;
                 xc  <= 8'h01;
+                sof       <= 1'b1;
+                sof_lane4 <= 1'b0;
+                sof_user  <= f_usr;
                 dic <= dic_next(dic, gap);
                 cst <= C_D0;
             end else if (f_valid && gap + 7'd4 >= gmin) begin
                 xd  <= S4_D;
                 xc  <= 8'h1F;
+                sof       <= 1'b1;
+                sof_lane4 <= 1'b1;
+                sof_user  <= f_usr;
                 h   <= S4_H;
                 dic <= dic_next(dic, gap + 7'd4);
                 cst <= C_D4;
@@ -394,6 +414,7 @@ always_ff @(posedge clk) begin
         ev_frame     <= 1'b0;
         ev_underflow <= 1'b0;
         ev_abort     <= 1'b0;
+        sof          <= 1'b0;
     end
 end
 

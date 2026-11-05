@@ -17,6 +17,13 @@
 #   fault      Local Fault in -> Remote Fault out; Remote Fault -> idles; recovery
 #   hiber      BER monitor: low rate no hi_ber, high rate hi_ber, clears, relock
 #   watchdog   no lock -> gt_rx_reset_req pulses
+#   ts         timestamp hooks (TS_EN = 1) at 10G and 25G: every transmit timestamp
+#              against the /S/ block position in the wire capture (decoded by the
+#              Python model), start lane, user / PAUSE flag; every received frame's
+#              timestamp = its transmit timestamp + the channel latency (3 cycles,
+#              hand-computed from tb_gt_chan), constant on every beat; aborts,
+#              underflows, line errors, oversize cuts (delivered, bad), PAUSE frames
+#              (consumed: no RX timestamp), back-to-back minimum-gap frames
 # Usage: test_omac_10g.py [test ...] [--seed N] [--quick]
 #
 # Copyright (c) 2026 Opsero Electronic Design Inc.
@@ -61,7 +68,7 @@ class Check:
 def run(tag, generics, plusargs, seed, timeout=3600):
     d = os.path.join(S.BUILD, 'omac_10g', tag)
     os.makedirs(d, exist_ok=True)
-    g = dict(SPEED=10, A_TX_PAD=1, B_MAX_FRAME=9600, WD=2097152)
+    g = dict(SPEED=10, A_TX_PAD=1, B_MAX_FRAME=9600, WD=2097152, TS_EN=0)
     g.update(generics)
     bdir = os.path.join(S.BUILD, 'omac_10g', 'b_' + '_'.join('%s%d' % kv for kv in sorted(g.items())))
     out, log = S.xsim(bdir, 'tb_omac_10g', g, SRCS, [p.replace('@', d + '/') for p in plusargs], timeout, seed,
@@ -324,7 +331,97 @@ def t_watchdog(seed, quick):
     return ck.done()
 
 
+# ---------------------------------------------------------------- timestamps
+def read_ts(path):
+    def num(x):
+        try:
+            return int(x)
+        except ValueError:      # X / Z from the simulator
+            return -1
+    return [tuple(num(x) for x in l.split()) for l in open(path) if l.strip()]
+
+
+CH_LAT = 3   # tb_gt_chan: a block on gt_tx_data in cycle c is on gt_rx_data in cycle c + 3 (cur, prev, rx regs)
+
+
+def t_ts(seed, quick, speed=10):
+    ck = Check('ts%d' % speed)
+    rng = random.Random(seed + 300)
+    n = 150 if quick else 400
+    fa, fb, exp_b = [], [], []
+    for i in range(n):
+        k = rng.random()
+        if i < n // 3:                                   # back to back at the minimum gap
+            ln, gap = rng.randint(60, 128), 0
+        else:
+            ln, gap = rng.choice([rng.randint(1, 59), rng.randint(60, 1514), rng.randint(60, 300)]), rng.choice([0, rng.randint(1, 30)])
+        f = dict(b=rnd_frame(rng, ln), gap=gap)
+        nb = (ln + 7) // 8             # beats the driver sends (padding is added by the MAC)
+        if i >= n // 3 and k < 0.06 and nb > 3:
+            f['abort'] = rng.randint(2, nb - 1)
+        elif i >= n // 3 and k < 0.12 and nb > 3:
+            f['under'] = rng.randint(2, nb - 1)
+        elif i >= n // 3 and k < 0.17:
+            f['b'] = rnd_frame(rng, rng.randint(1515, 2500))     # cut at B (MAX_FRAME 1518)
+        fa.append(f)
+    for i in range(n):
+        fb.append(dict(b=rnd_frame(rng, rng.randint(60, 1514)), gap=rng.choice([0, 0, rng.randint(1, 20)])))
+    tag = 'ts%d_s%d' % (speed, seed)
+    d = os.path.join(S.BUILD, 'omac_10g', tag)
+    os.makedirs(d, exist_ok=True)
+    M.write_frames(os.path.join(d, 'fa.txt'), fa)
+    M.write_frames(os.path.join(d, 'fb.txt'), fb)
+    out, d = run(tag, dict(SPEED=speed, TS_EN=1, B_MAX_FRAME=1518),
+                 ['mode=ts', 'fa=@fa.txt', 'fb=@fb.txt', 'oa=@oa.txt', 'ob=@ob.txt', 'cap=@cap.txt',
+                  'capn=400000', 'ta=@ta.txt', 'tb=@tb.txt', 'ra=@ra.txt', 'rb=@rb.txt'], seed)
+    print('   ', out.replace('\n', '\n    '))
+    ck('TB_DONE' in out and 'TB_FAIL' not in out, 'simulation completed')
+    cap0 = S.tb_values(out, 'CAP0')[0]['cyc']
+    ta, tb_ = read_ts(os.path.join(d, 'ta.txt')), read_ts(os.path.join(d, 'tb.txt'))
+    ra, rb = read_ts(os.path.join(d, 'ra.txt')), read_ts(os.path.join(d, 'rb.txt'))
+    oa, ob = M.read_rx(os.path.join(d, 'oa.txt')), M.read_rx(os.path.join(d, 'ob.txt'))
+    # 1. A's transmit timestamps against the wire: every frame's /S/ block in the capture
+    frames, info = M.parse_capture(os.path.join(d, 'cap.txt'))
+    tcap = [t for t in ta if t[0] >= cap0 + 1]
+    m = min(len(tcap), len(frames))
+    ck(m >= n * 3 // 4 and len(tcap) == len(frames), 'A: %d transmit timestamps in the capture window, %d frames decoded'
+       % (len(tcap), len(frames)))
+    bad_t = [i for i in range(m) if tcap[i][0] != cap0 + info['sof_line'][i]]
+    ck(not bad_t, 'A: transmit timestamp = the cycle its /S/ block was on gt_tx_data, %d frames (%d mismatches%s)'
+       % (m, len(bad_t), '' if not bad_t else ', first %d: ts %d, /S/ line %d' % (bad_t[0], tcap[bad_t[0]][0], cap0 + info['sof_line'][bad_t[0]])))
+    ck(all(tcap[i][1] == (frames[i][2] == 4) for i in range(m)), 'A: tx_ts_lane4 = start lane 4 in the decoded wire (%d lane-4 starts)'
+       % sum(1 for i in range(m) if frames[i][2] == 4))
+    pz = [i for i in range(m) if len(frames[i][0]) >= 14 and frames[i][0][12:14] == b'\x88\x08']
+    ck(len(pz) == 2 and all(tcap[i][2] == (0 if i in pz else 1) for i in range(m)),
+       'A: tx_ts_user = 0 exactly for the %d PAUSE frames (XOFF, XON) on the wire' % len(pz))
+    ua = [t for t in ta if t[2] == 1]
+    ub = [t for t in tb_ if t[2] == 1]
+    ck(len(ua) == n and len(ub) == n and len(ta) == n + 2 and len(tb_) == n,
+       'one timestamp per frame: A %d user + %d PAUSE, B %d' % (len(ua), len(ta) - len(ua), len(ub)))
+    # 2. receive timestamps: the k-th delivered frame = the k-th user frame sent, + CH_LAT
+    for lbl, tx, rx, got, nexp in (('A->B', ua, rb, ob, n), ('B->A', ub, ra, oa, n)):
+        ck(len(rx) == len(got) == nexp, '%s: %d frames delivered with a timestamp (%d expected; PAUSE consumed)'
+           % (lbl, len(rx), nexp))
+        k = min(len(rx), len(tx))
+        diff = sorted(set(rx[i][0] - tx[i][0] for i in range(k)))
+        ck(diff == [CH_LAT], '%s: RX timestamp - TX timestamp = %s cycles for all %d frames (hand-computed: %d)'
+           % (lbl, diff[:5], k, CH_LAT))
+        ck(all(rx[i][1] == tx[i][1] for i in range(k)), '%s: RX lane4 = TX lane4' % lbl)
+        ck(all(r[2] == 1 for r in rx), '%s: timestamp constant on every beat of each frame' % lbl)
+        nbad = sum(1 for u, _ in got if u)
+        print('      %s: %d of the delivered frames bad (abort / underflow / cut / FCS), all with their own timestamp'
+              % (lbl, nbad))
+    nb_exp = sum(1 for f in fa if 'abort' in f or 'under' in f or len(f['b']) > 1514)
+    ck(sum(1 for u, _ in ob if u) == nb_exp and nb_exp > 0, 'A->B: %d bad frames (abort, underflow, oversize cut) delivered'
+       % nb_exp)
+    ck(sum(1 for u, _ in oa if u) > 0, 'B->A: line errors gave %d bad frames' % sum(1 for u, _ in oa if u))
+    ck(sum(1 for t in ta if t[1]) > 0 and sum(1 for t in ta if not t[1]) > 0, 'both start lanes exercised')
+    return ck.done()
+
+
 TESTS = {
+    'ts': lambda s, q: t_ts(s, q, 10),
+    'ts25': lambda s, q: t_ts(s, q, 25),
     'frames': lambda s, q: t_frames(s, q, 10),
     'frames25': lambda s, q: t_frames(s, True, 25),
     'errors': t_errors,

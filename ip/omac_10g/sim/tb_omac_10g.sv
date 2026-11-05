@@ -6,11 +6,16 @@
 // receiver runs on the far end's TX clock (the recovered clock), so the RX
 // clock crossing of both IPs is exercised.
 // Plusargs:
-//   +mode=<frames|errors|pause|fault|hiber|watchdog>
+//   +mode=<frames|errors|ts|pause|fault|hiber|watchdog>
 //   +fa=<file> +fb=<file>      frames A sends / B sends ("len gap abort_beat under_beat hex")
 //   +oa=<file> +ob=<file>      frames received by A / B ("user hex")
 //   +cap=<file> +capn=<n>      A's transmitted 66-bit blocks ("hdr data"), first n after link up
 //   +gap=<0..100>              (driver) unused, gaps come from the frame files
+//   +ta=<file> +tb=<file>      (TS_EN) A's / B's transmit timestamps ("val lane4 user")
+//   +ra=<file> +rb=<file>      (TS_EN) timestamps of the frames received by A / B
+//                              ("ts lane4 const": const = 1 if equal on every beat)
+// Time values for the timestamp hooks: cyc_a / cyc_b count clk_a / clk_b cycles
+// (A: tx_ts_in = cyc_a, rx_ts_in = cyc_b, since A receives on clk_b; B mirrored).
 // Results: TB_* lines (link times, event counts, mode-specific measurements),
 // TB_DONE at the end.
 //
@@ -23,7 +28,8 @@ module tb_omac_10g #(
     parameter int SPEED       = 10,
     parameter int A_TX_PAD    = 1,
     parameter int B_MAX_FRAME = 9600,
-    parameter int WD          = 2097152
+    parameter int WD          = 2097152,
+    parameter int TS_EN       = 0
 );
 
 `include "tb_util.svh"
@@ -68,8 +74,15 @@ wire [11:0] a_ev, b_ev;
 wire        a_wd, b_wd;
 wire [2:0]  a_lb, b_lb;
 
-`define OMAC_INST(X, CLK, RCLK, RST, PAD, MAXF) \
-omac_10g #(.SPEED(SPEED), .TX_PAD(PAD), .MAX_FRAME(MAXF), .RX_WATCHDOG(WD)) dut_``X ( \
+// timestamp hooks: cycle counters as the time values
+logic [31:0] cyc_a = '0, cyc_b = '0;
+always @(posedge clk_a) cyc_a <= cyc_a + 1;
+always @(posedge clk_b) cyc_b <= cyc_b + 1;
+wire         a_ts_v, b_ts_v, a_ts_l4, b_ts_l4, a_ts_u, b_ts_u, a_rts_l4, b_rts_l4;
+wire  [31:0] a_ts_val, b_ts_val, a_rts, b_rts;
+
+`define OMAC_INST(X, CLK, RCLK, RST, PAD, MAXF, TXT, RXT) \
+omac_10g #(.SPEED(SPEED), .TX_PAD(PAD), .MAX_FRAME(MAXF), .RX_WATCHDOG(WD), .TS_EN(TS_EN), .TS_W(32)) dut_``X ( \
     .clk(CLK), .rst(RST), \
     .s_axis_tx_tdata(X``_s_tdata), .s_axis_tx_tkeep(X``_s_tkeep), .s_axis_tx_tvalid(X``_s_tvalid), \
     .s_axis_tx_tready(X``_s_tready), .s_axis_tx_tlast(X``_s_tlast), .s_axis_tx_tuser(X``_s_tuser), \
@@ -87,10 +100,12 @@ omac_10g #(.SPEED(SPEED), .TX_PAD(PAD), .MAX_FRAME(MAXF), .RX_WATCHDOG(WD)) dut_
     .ev_rx_bad_block(X``_ev[10]), .ev_rx_sequence_error(X``_ev[11]), \
     .gt_tx_ready(gt_ready), .gt_tx_hdr(X``_tx_hdr), .gt_tx_data(X``_tx_data), .gt_loopback(X``_lb), \
     .gt_rx_clk(RCLK), .gt_rx_ready(gt_ready), .gt_rx_valid(X``_rx_valid), .gt_rx_hdr(X``_rx_hdr), \
-    .gt_rx_data(X``_rx_data), .gt_rx_slip(X``_slip), .gt_rx_reset_req(X``_wd));
+    .gt_rx_data(X``_rx_data), .gt_rx_slip(X``_slip), .gt_rx_reset_req(X``_wd), \
+    .tx_ts_in(TXT), .tx_ts_valid(X``_ts_v), .tx_ts_val(X``_ts_val), .tx_ts_lane4(X``_ts_l4), \
+    .tx_ts_user(X``_ts_u), .rx_ts_in(RXT), .m_axis_rx_ts(X``_rts), .m_axis_rx_ts_lane4(X``_rts_l4));
 
-`OMAC_INST(a, clk_a, clk_b, rst_a, A_TX_PAD, 9600)
-`OMAC_INST(b, clk_b, clk_a, rst_b, 1, B_MAX_FRAME)
+`OMAC_INST(a, clk_a, clk_b, rst_a, A_TX_PAD, 9600, cyc_a, cyc_b)
+`OMAC_INST(b, clk_b, clk_a, rst_b, 1, B_MAX_FRAME, cyc_b, cyc_a)
 
 // A -> B in clk_a (B's recovered clock), B -> A in clk_b
 tb_gt_chan ch_ab (.clk(clk_a), .tx_hdr(a_tx_hdr), .tx_data(a_tx_data), .rx_slip(b_slip),
@@ -182,13 +197,28 @@ end
 // ---------------- RX monitors ----------------
 int rx_n_a = 0, rx_n_b = 0, keep_err = 0, ctrl_seen = 0;
 integer fo_a = 0, fo_b = 0;
+integer fr_a = 0, fr_b = 0, ft_a = 0, ft_b = 0;
+int     tx_ts_n_a = 0, tx_ts_n_b = 0;
+
+// transmit timestamps (one per frame, PAUSE frames with user = 0)
+always @(posedge clk_a) if (a_ts_v) begin
+    tx_ts_n_a++;
+    if (ft_a != 0) $fdisplay(ft_a, "%0d %0d %0d", a_ts_val, a_ts_l4, a_ts_u);
+end
+always @(posedge clk_b) if (b_ts_v) begin
+    tx_ts_n_b++;
+    if (ft_b != 0) $fdisplay(ft_b, "%0d %0d %0d", b_ts_val, b_ts_l4, b_ts_u);
+end
 
 `define RX_MON(X, CLK) \
 initial begin : mon_``X \
     byte unsigned q[$]; int nk; bit seen_last; \
+    logic [31:0] ts0; logic l40; bit tsc; \
     forever begin \
         @(posedge CLK); \
         if (X``_m_tvalid) begin \
+            if (q.size() == 0) begin ts0 = X``_rts; l40 = X``_rts_l4; tsc = 1'b1; end \
+            else if (X``_rts !== ts0 || X``_rts_l4 !== l40) tsc = 1'b0; \
             nk = 0; seen_last = 1'b0; \
             for (int k = 0; k < 8; k++) begin \
                 if (X``_m_tkeep[k]) begin \
@@ -200,6 +230,7 @@ initial begin : mon_``X \
             if (X``_m_tlast) begin \
                 if (q.size() >= 14 && q[12] == 8'h88 && q[13] == 8'h08) ctrl_seen++; \
                 if (fo_``X != 0) $fdisplay(fo_``X, "%0d %s", X``_m_tuser, tb_bytes2hex(q)); \
+                if (fr_``X != 0) $fdisplay(fr_``X, "%0d %0d %0d", ts0, l40, tsc); \
                 rx_n_``X++; \
                 q.delete(); \
             end \
@@ -216,6 +247,7 @@ int     capn = 0, capd = 0;
 bit     cap_en = 1'b0;
 always @(posedge clk_a) begin
     if (cap_en && fcap != 0 && capd < capn) begin
+        if (capd == 0) $display("TB_CAP0 cyc=%0d", cyc_a);
         $fdisplay(fcap, "%0d %016x", a_tx_hdr, a_tx_data);
         capd++;
     end
@@ -262,6 +294,10 @@ initial begin
     if ($value$plusargs("oa=%s", oa)) fo_a = $fopen(oa, "w");
     if ($value$plusargs("ob=%s", ob)) fo_b = $fopen(ob, "w");
     if ($value$plusargs("cap=%s", cap)) fcap = $fopen(cap, "w");
+    if ($value$plusargs("ta=%s", cap)) ft_a = $fopen(cap, "w");
+    if ($value$plusargs("tb=%s", cap)) ft_b = $fopen(cap, "w");
+    if ($value$plusargs("ra=%s", cap)) fr_a = $fopen(cap, "w");
+    if ($value$plusargs("rb=%s", cap)) fr_b = $fopen(cap, "w");
     if (!$value$plusargs("capn=%d", capn)) capn = 0;
     $display("TB_INFO mode=%s frames_a=%0d frames_b=%0d phase_ab=%0d phase_ba=%0d", mode, txq_a.size(),
              txq_b.size(), ch_ab.phase, ch_ba.phase);
@@ -291,8 +327,18 @@ initial begin
     count_en = 1'b1;
     cap_en   = 1'b1;
 
-    if (mode == "frames" || mode == "errors") begin
+    if (mode == "frames" || mode == "errors" || mode == "ts") begin
         if (mode == "errors") ch_ba.dflip = 40;
+        if (mode == "ts") ch_ba.dflip = 400;
+        if (mode == "ts") begin
+            // A sends XOFF + XON (two PAUSE frames of the MAC) in the middle of its frames;
+            // B does not honour them
+            a_pq = 16'd2; a_pref = 16'd0;
+            fork begin
+                repeat (3000) @(posedge clk_a); a_psend = 1'b1;
+                repeat (400)  @(posedge clk_a); a_psend = 1'b0;
+            end join_none
+        end
         tx_go = 1'b1;
         n = 0;
         while ((txq_a.size() > 0 || txq_b.size() > 0 || a_s_tvalid || b_s_tvalid) && n < 4000000) begin
@@ -380,6 +426,11 @@ initial begin
     if (fo_a) $fclose(fo_a);
     if (fo_b) $fclose(fo_b);
     if (fcap) $fclose(fcap);
+    if (ft_a) $fclose(ft_a);
+    if (ft_b) $fclose(ft_b);
+    if (fr_a) $fclose(fr_a);
+    if (fr_b) $fclose(fr_b);
+    $display("TB_TS tx_a=%0d tx_b=%0d", tx_ts_n_a, tx_ts_n_b);
     $display("TB_DONE");
     $finish;
 end

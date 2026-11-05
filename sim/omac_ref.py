@@ -86,7 +86,8 @@ def decode_block(hdr, p):
 def parse_capture(path):
     """Decode a TX capture ("hdr data" per line, IEEE bit order). Returns
     (frames, info): frames = list of (bytes without FCS, fcs_ok, start_lane),
-    info = dict(gaps=[IPG bytes from /T/ inclusive to /S/], invalid=n, fault_cols=n)."""
+    info = dict(gaps=[IPG bytes from /T/ inclusive to /S/], invalid=n, fault_cols=n,
+    sof_line=[capture line of each frame's /S/ block; line 0 only synchronises the descrambler])."""
     ds = Descrambler()
     lanes = []
     invalid = 0
@@ -102,7 +103,7 @@ def parse_capture(path):
             invalid += 1
             blk = [(1, ERROR)] * 8
         lanes.extend(blk)
-    frames, gaps = [], []
+    frames, gaps, sof_line = [], [], []
     i, n = 0, len(lanes)
     last_t = None
     fault_cols = 0
@@ -126,11 +127,12 @@ def parse_capture(path):
             term = lanes[j] == (1, TERM)
             ok = good_pre and term and len(data) >= 4 and fcs(bytes(data[:-4])) == bytes(data[-4:])
             frames.append((bytes(data[:-4]), ok, start_lane))
+            sof_line.append(1 + i // 8)
             last_t = j
             i = j + 1
             continue
         i += 1
-    return frames, dict(gaps=gaps, invalid=invalid, fault_cols=fault_cols)
+    return frames, dict(gaps=gaps, invalid=invalid, fault_cols=fault_cols, sof_line=sof_line)
 
 
 # ---------------------------------------------------------------- 40GBASE-R

@@ -74,6 +74,7 @@ On hardware the same IPs interoperate with an NVIDIA ConnectX-6 Dx at 10GBASE-R 
 | `10g_fault` | `test_omac_10g.py fault` | B sends Local Fault → A local fault, link down, A transmits Remote Fault, B remote fault; A's receiver broken (all headers invalid) → A local fault from its own PCS, B in Remote Fault transmits idles while frames are offered; recovery of both |
 | `10g_hiber` | `test_omac_10g.py hiber` | 1 bad header per 4000 blocks: no hi_ber; 1 per 150: hi_ber within a window, link down, local / remote fault, lock kept; errors off: hi_ber clears within 2 windows; 20 bad headers in a row: lock lost and re-acquired |
 | `10g_watchdog` | `test_omac_10g.py watchdog` | no lock possible → `gt_rx_reset_req` pulses every `RX_WATCHDOG` cycles; the locked side does not pulse after locking |
+| `10g_ts`, `10g_ts25` | `test_omac_10g.py ts / ts25` | **timestamp hooks** (`TS_EN` = 1, time values = cycle counters of each clock), 400 frames each way at 10G and at 25G: A's 402 transmit timestamps (400 user + 2 PAUSE) against the line of each frame's /S/ block in A's wire capture as decoded by the Python model (exact), `tx_ts_lane4` = the decoded start lane, `tx_ts_user` = 0 exactly for the PAUSE frames; every frame delivered at B / A carries a timestamp = the transmit timestamp of the same frame + 3 cycles (the channel latency, hand-computed from `tb_gt_chan`), the same lane-4 flag, constant on every beat; with aborts, underflows and oversize cuts (A->B, delivered bad), line bit flips (B->A, delivered bad), PAUSE frames consumed at B (no timestamp) and a third of the frames back to back at the minimum gap. Mutations (transmit sample one cycle early; lane-4 frames taking the SFD column's time) are caught |
 | `40g_units` | `tb_40g_units.sv` | **interop vectors**: alignment markers of lanes 0-3 against 66-bit blocks written down by hand from table 82-3, BIP3 of idle / data / marker blocks worked out by hand from table 82-4, the 2nd and 4th marker of `omac_40g_pcs_tx` (scrambler off) after 16383 idle (BIP3 0x1E) or data (0x19) blocks; marker stall without block loss; lane receivers: AM lock, lane numbers, BIP errors, marker loss; 3000 CRC identity cases |
 | `40g_frames`, `40g_frames_s2` | `test_omac_40g.py frames` | random lane permutation, skew and 66-bit phase per lane, per-lane recovered clocks; 600 frames each way (60-9000 bytes, half back to back) exact; the four lanes as received decoded by the Python model: lane ids, marker period, BIP3/BIP7, deskew, clause 82 blocks, frames, starts in lane 0 only, gaps >= 5 with the deficit idle count (every prefix sum >= 12 n - 7) |
 | `40g_perms` | `test_omac_40g.py perms` | all 24 lane orders in a random order with random skew: relock, lane map and measured skew, 25 frames each (600) exact |
@@ -90,8 +91,9 @@ On hardware the same IPs interoperate with an NVIDIA ConnectX-6 Dx at 10GBASE-R 
 
 ## Results
 
-Full regression (`make sim`), 2026-11-03, Vivado 2025.2 xsim, v0.1.0 (omac_10g with the 25G
-pipeline stages, omac_40g): **PASS, 29 tests, 0 failed, 16 min**. The omac_10g rows below are
+Full regression (`make sim`), 2026-11-05, Vivado 2025.2 xsim, v0.2.0-dev (omac_10g with the
+timestamp hooks): **PASS, 31 tests, 0 failed, 19 min** (the 29 tests of v0.1.0 unchanged, plus
+`10g_ts` and `10g_ts25`). v0.1.0 (2026-11-03): PASS, 29 tests, 16 min. The omac_10g rows below are
 from the first omac_10g run (counts unchanged since).
 
 | Test | Result | Time (s) | Measured along the way |
@@ -111,6 +113,8 @@ from the first omac_10g run (counts unchanged since).
 | `10g_fault` | PASS | 7 | recovery after Local Fault 77 / 152 cycles; after the RX outage (relock) 13.7k cycles |
 | `10g_hiber` | PASS | 9 | 18 bad headers in 3 windows: no hi_ber; 1 / 150 blocks: hi_ber after 3032 cycles; clear 35.7k cycles after the errors stop; burst: lock lost after 20 blocks |
 | `10g_watchdog` | PASS | 6 | 3 reset requests in 3 periods at the unlocked side |
+| `10g_ts` | PASS | 21 | 402 TX timestamps = the /S/ block line of the decoded capture (0 mismatches, 139 lane-4 starts, 2 PAUSE with user 0); 400 + 400 frames delivered, RX - TX = 3 cycles for every frame; 49 bad A->B (16 aborts, 17 underflows, 16 cuts), 104 line errors B->A |
+| `10g_ts25` | PASS | 21 | the same at 2.56 ns |
 | `40g_units` | PASS | 17 | 4 marker blocks and 4 BIP values by hand; 2nd marker after 16383 idles = 0xE1B8896F1E477690 (lane 0), after data blocks BIP3 0x19; 159,968 blocks through the marker stall, no loss; lane AM lock, 1 flip -> 1 BIP error, marker loss after 4; 3000 CRC cases |
 | `40g_frames` | PASS | 46 | lanes [0, 2, 1, 3], skew 1/15/24/27 (measured spread 27): 600 + 600 frames exact; Python: 12 markers, 0 period / BIP / alignment errors, 600/600 frames, IPG min 5, mean 12.03 |
 | `40g_frames_s2` | PASS | 44 | other order, skew, phases, lengths |

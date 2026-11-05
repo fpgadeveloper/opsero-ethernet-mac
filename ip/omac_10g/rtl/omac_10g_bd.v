@@ -22,7 +22,9 @@ module omac_10g_bd #(
     parameter RX_WATCHDOG = 2097152,
     parameter RX_FIFO_DEPTH = 32,
     parameter LOOPBACK_MODE = 3'b010,
-    parameter SCR_INIT = {58{1'b1}}
+    parameter SCR_INIT = {58{1'b1}},
+    parameter TS_EN = 1'b0,
+    parameter TS_W = 32
 ) (
     (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 clk CLK" *)
     (* X_INTERFACE_PARAMETER = "ASSOCIATED_BUSIF s_axis_tx:m_axis_rx, ASSOCIATED_RESET rst" *)
@@ -92,7 +94,15 @@ module omac_10g_bd #(
     input wire [1:0] gt_rx_hdr,
     input wire [63:0] gt_rx_data,
     output wire gt_rx_slip,
-    output wire gt_rx_reset_req
+    output wire gt_rx_reset_req,
+    input wire [TS_W-1:0] tx_ts_in,
+    output wire tx_ts_valid,
+    output wire [TS_W-1:0] tx_ts_val,
+    output wire tx_ts_lane4,
+    output wire tx_ts_user,
+    input wire [TS_W-1:0] rx_ts_in,
+    output wire [TS_W-1:0] m_axis_rx_ts,
+    output wire m_axis_rx_ts_lane4
 );
 
 omac_10g #(
@@ -108,7 +118,9 @@ omac_10g #(
         .RX_WATCHDOG(RX_WATCHDOG),
         .RX_FIFO_DEPTH(RX_FIFO_DEPTH),
         .LOOPBACK_MODE(LOOPBACK_MODE),
-        .SCR_INIT(SCR_INIT)
+        .SCR_INIT(SCR_INIT),
+        .TS_EN(TS_EN),
+        .TS_W(TS_W)
 ) u_omac_10g (
         .clk(clk),
         .rst(rst),
@@ -162,7 +174,15 @@ omac_10g #(
         .gt_rx_hdr(gt_rx_hdr),
         .gt_rx_data(gt_rx_data),
         .gt_rx_slip(gt_rx_slip),
-        .gt_rx_reset_req(gt_rx_reset_req)
+        .gt_rx_reset_req(gt_rx_reset_req),
+        .tx_ts_in(tx_ts_in),
+        .tx_ts_valid(tx_ts_valid),
+        .tx_ts_val(tx_ts_val),
+        .tx_ts_lane4(tx_ts_lane4),
+        .tx_ts_user(tx_ts_user),
+        .rx_ts_in(rx_ts_in),
+        .m_axis_rx_ts(m_axis_rx_ts),
+        .m_axis_rx_ts_lane4(m_axis_rx_ts_lane4)
 );
 
 endmodule

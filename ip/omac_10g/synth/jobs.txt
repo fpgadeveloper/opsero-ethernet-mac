@@ -3,6 +3,8 @@
 # gtwizard IP (gt/omac_gt_usp_gth/gen_gt.tcl, example channel X0Y14) and synthesize it with the wrapper.
 omac_10g_lint      | omac_10g          |                   | lint  | 6.4   | xczu7ev-ffvc1156-2-e |
 omac_10g_zu7ev     | omac_10g          |                   | route | 6.4   | xczu7ev-ffvc1156-2-e |
+omac_10g_ts_zu7ev  | omac_10g          | TS_EN=1           | route | 6.4   | xczu7ev-ffvc1156-2-e |
+omac_10g_ts_25g_ku5p | omac_10g        | SPEED=25 TS_EN=1  | route | 2.56  | xcku5p-ffvb676-2-e   |
 omac_10g_nopause   | omac_10g          | PAUSE_EN=0        | synth | 6.4   | xczu7ev-ffvc1156-2-e |
 omac_10g_25g_ku5p  | omac_10g          | SPEED=25          | route | 2.56  | xcku5p-ffvb676-2-e   |
 omac_10g_gth_zu7ev | omac_10g_gth_top  |                   | synth | 6.4   | xczu7ev-ffvc1156-2-e | gt

@@ -41,6 +41,9 @@ TESTS = [
     ('10g_fault', T10, ['fault'], ['fault'], 'Local Fault -> Remote Fault, Remote Fault -> idles, recovery'),
     ('10g_hiber', T10, ['hiber'], ['hiber'], 'BER monitor: no hi_ber at low rate, hi_ber, clear, relock'),
     ('10g_watchdog', T10, ['watchdog'], ['watchdog'], 'no lock -> gt_rx_reset_req'),
+    ('10g_ts', T10, ['ts'], ['ts', '--quick'], 'timestamp hooks (TS_EN): TX ts = /S/ block on the wire (Python decode), '
+     'RX ts = TX ts + channel latency, lane 4, PAUSE, drops, aborts, line errors, min-gap frames'),
+    ('10g_ts25', T10, ['ts25'], ['ts25', '--quick'], 'timestamp hooks at SPEED 25'),
     ('40g_units', U40, [], [], '40GBASE-R marker / BIP vectors (tables 82-3/82-4), marker insertion + stall, '
      'lane AM lock + BIP, 256-bit CRC identities'),
     ('40g_frames', T40, ['frames', '--seed', '1'], ['frames', '--seed', '1', '--quick'],

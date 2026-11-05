@@ -14,6 +14,20 @@
 // SPEED 10: clk 156.25 MHz (10.3125 Gb/s lane); SPEED 25: same logic, clk
 // 390.625 MHz (25.78125 Gb/s, GTY only), BER window 2 ms / 97 by default.
 //
+// Timestamp hooks (TS_EN = 1; docs/omac_10g.md "Timestamp hooks"): the
+// reference plane is the 64B/66B block boundary at the transceiver interface.
+//   TX: tx_ts_valid pulses (in clk) one cycle after the /S/ block of a frame
+//       was on gt_tx_data/gt_tx_hdr, with tx_ts_val = tx_ts_in of that cycle,
+//       tx_ts_lane4 (/S/ in lane 4: the frame starts 32 bits later in the
+//       block) and tx_ts_user (0 = a PAUSE frame of the MAC). One pulse per
+//       frame, in transmit order.
+//   RX: rx_ts_in (gt_rx_clk) is sampled with the block that carries a frame's
+//       /S/ as it arrives on gt_rx_data and travels with the frame through
+//       the clock crossing: m_axis_rx_ts / m_axis_rx_ts_lane4 are constant on
+//       every beat of the delivered frame. Frames that are not delivered never
+//       show a timestamp.
+// TS_EN = 0 (default): the outputs are 0 and no logic is added.
+//
 // Copyright (c) 2026 Opsero Electronic Design Inc.
 
 `resetall
@@ -33,7 +47,9 @@ module omac_10g #(
     parameter int          RX_WATCHDOG    = 2097152,   // clk cycles without lock before gt_rx_reset_req
     parameter int          RX_FIFO_DEPTH  = 32,
     parameter logic [2:0]  LOOPBACK_MODE  = 3'b010,    // GT near-end PMA loopback
-    parameter logic [57:0] SCR_INIT       = '1
+    parameter logic [57:0] SCR_INIT       = '1,
+    parameter bit          TS_EN          = 1'b0,      // timestamp hooks
+    parameter int          TS_W           = 32         // width of the time values (TS_EN = 1)
 ) (
     input  wire logic        clk,
     input  wire logic        rst,
@@ -101,7 +117,17 @@ module omac_10g #(
     input  wire logic [1:0]  gt_rx_hdr,
     input  wire logic [63:0] gt_rx_data,
     output wire logic        gt_rx_slip,
-    output logic             gt_rx_reset_req
+    output logic             gt_rx_reset_req,
+
+    // timestamp hooks (TS_EN = 1; outputs 0 otherwise)
+    input  wire logic [TS_W-1:0] tx_ts_in,         // clk: the time to latch at a frame's /S/
+    output logic             tx_ts_valid,
+    output logic      [TS_W-1:0] tx_ts_val,
+    output logic             tx_ts_lane4,
+    output logic             tx_ts_user,
+    input  wire logic [TS_W-1:0] rx_ts_in,         // gt_rx_clk: the same time in the receive clock
+    output logic      [TS_W-1:0] m_axis_rx_ts,     // clk: with every beat of m_axis_rx
+    output logic             m_axis_rx_ts_lane4
 );
 
 import omac_pkg::*;
@@ -109,7 +135,13 @@ import omac_pkg::*;
 initial begin
     if (DATA_WIDTH != 64) $fatal(1, "omac_10g: DATA_WIDTH must be 64");
     if (SPEED != 10 && SPEED != 25) $fatal(1, "omac_10g: SPEED must be 10 or 25");
+    if (TS_EN && TS_W < 1) $fatal(1, "omac_10g: TS_W must be >= 1");
 end
+
+// timestamp width inside (1 constant-0 bit when the hooks are off)
+localparam int TSI = TS_EN ? TS_W : 1;
+localparam int TSX = TS_EN ? TS_W + 1 : 0;     // extra RX FIFO bits: {lane4, ts}
+wire [TSI-1:0] rx_ts_i = TS_EN ? TSI'(rx_ts_in) : '0;
 
 // ======================= resets =======================
 logic tx_ready_s, rx_ready_s;
@@ -131,11 +163,14 @@ logic        r_xv;
 logic [63:0] r_xd;
 logic [7:0]  r_xc;
 logic        r_bad_block, r_seq_err;
+logic [TSI-1:0] r_xts;
 
-omac_10g_pcs_rx #(.SLIP_WAIT(SLIP_WAIT), .BER_TIMER_CLKS(BER_TIMER_CLKS), .BER_THRESH(BER_THRESH)) u_pcs_rx (
+omac_10g_pcs_rx #(.SLIP_WAIT(SLIP_WAIT), .BER_TIMER_CLKS(BER_TIMER_CLKS), .BER_THRESH(BER_THRESH),
+                  .TS_W(TSI)) u_pcs_rx (
     .clk(gt_rx_clk), .rst(rx_rst), .valid(gt_rx_valid), .hdr(gt_rx_hdr), .data(gt_rx_data),
+    .ts_in(rx_ts_i),
     .slip(gt_rx_slip), .block_lock(r_block_lock), .hi_ber(r_hi_ber),
-    .xvalid(r_xv), .xd(r_xd), .xc(r_xc), .ev_bad_block(r_bad_block), .ev_seq_error(r_seq_err));
+    .xvalid(r_xv), .xd(r_xd), .xc(r_xc), .xts(r_xts), .ev_bad_block(r_bad_block), .ev_seq_error(r_seq_err));
 
 logic [1:0] r_link_fault;
 omac_rs_fault #(.COLS(2)) u_rs_fault (
@@ -150,21 +185,30 @@ logic [7:0]  r_tkeep;
 logic        r_pause_ev;
 logic [15:0] r_pause_time;
 logic        r_ev_good, r_ev_bad, r_ev_fcs, r_ev_runt, r_ev_over;
+logic [TSI-1:0] r_ts;
+logic        r_ts_l4;
 
-omac_10g_mac_rx #(.MIN_FRAME(MIN_FRAME), .MAX_FRAME(MAX_FRAME)) u_mac_rx (
-    .clk(gt_rx_clk), .rst(rx_rst), .xvalid(r_xv), .xd(r_xd), .xc(r_xc),
+omac_10g_mac_rx #(.MIN_FRAME(MIN_FRAME), .MAX_FRAME(MAX_FRAME), .TS_W(TSI)) u_mac_rx (
+    .clk(gt_rx_clk), .rst(rx_rst), .xvalid(r_xv), .xd(r_xd), .xc(r_xc), .xts(r_xts),
     .rx_enable(rx_enable_r), .mac_addr(ctl_mac_addr),
     .m_tvalid(r_tvalid), .m_tdata(r_tdata), .m_tkeep(r_tkeep), .m_tlast(r_tlast), .m_tuser(r_tuser),
+    .m_ts(r_ts), .m_ts_lane4(r_ts_l4),
     .pause_ev(r_pause_ev), .pause_time(r_pause_time),
     .ev_good(r_ev_good), .ev_bad(r_ev_bad), .ev_fcs_error(r_ev_fcs), .ev_runt(r_ev_runt),
     .ev_oversize(r_ev_over));
 
-// frames into clk
-logic [73:0] f_rd;
-logic        f_valid;
-omac_async_fifo #(.WIDTH(74), .DEPTH(RX_FIFO_DEPTH)) u_rx_fifo (
+// frames into clk (with TS_EN: the frame's {lane4, ts} on every beat)
+localparam int FW = 74 + TSX;
+logic [FW-1:0] f_rd, f_wr;
+logic          f_valid;
+if (TS_EN) begin : g_fifo_ts
+    assign f_wr = {r_ts_l4, r_ts[TSI-1:0], r_tuser, r_tlast, r_tkeep, r_tdata};
+end else begin : g_fifo
+    assign f_wr = {r_tuser, r_tlast, r_tkeep, r_tdata};
+end
+omac_async_fifo #(.WIDTH(FW), .DEPTH(RX_FIFO_DEPTH)) u_rx_fifo (
     .wr_clk(gt_rx_clk), .wr_rst(rx_rst), .wr_en(r_tvalid),
-    .wr_data({r_tuser, r_tlast, r_tkeep, r_tdata}), .wr_overflow(), .wr_free(),
+    .wr_data(f_wr), .wr_overflow(), .wr_free(),
     .rd_clk(clk), .rd_rst(fifo_rd_rst), .rd_en(1'b1), .rd_data(f_rd), .rd_valid(f_valid));
 
 always_ff @(posedge clk) begin
@@ -173,6 +217,15 @@ always_ff @(posedge clk) begin
     m_axis_rx_tkeep  <= f_rd[71:64];
     m_axis_rx_tlast  <= f_rd[72];
     m_axis_rx_tuser  <= f_rd[73];
+end
+if (TS_EN) begin : g_rx_ts
+    always_ff @(posedge clk) begin
+        m_axis_rx_ts       <= f_rd[74 +: TS_W];
+        m_axis_rx_ts_lane4 <= f_rd[74 + TS_W];
+    end
+end else begin : g_rx_ts_off
+    assign m_axis_rx_ts       = '0;
+    assign m_axis_rx_ts_lane4 = 1'b0;
 end
 
 // events into clk
@@ -232,6 +285,7 @@ omac_pause #(.BIT_TIMES_PER_CLK(64)) u_pause (
 // ======================= transmit (clk) =======================
 logic [63:0] m_xd;
 logic [7:0]  m_xc;
+logic        m_sof, m_sof_l4, m_sof_usr;
 omac_10g_mac_tx #(.TX_PAD(TX_PAD), .PAUSE_EN(PAUSE_EN)) u_mac_tx (
     .clk(clk), .rst(tx_rst),
     .s_tdata(s_axis_tx_tdata), .s_tkeep(s_axis_tx_tkeep), .s_tvalid(s_axis_tx_tvalid),
@@ -239,7 +293,7 @@ omac_10g_mac_tx #(.TX_PAD(TX_PAD), .PAUSE_EN(PAUSE_EN)) u_mac_tx (
     .tx_enable(ctl_tx_enable), .hold(ctl_pause_tx_honour && stat_rx_pause_req),
     .pause_req(pq_req), .pause_req_xon(pq_xon), .pause_ack(pq_ack),
     .pause_quanta(ctl_tx_pause_quanta), .mac_addr(ctl_mac_addr),
-    .xd(m_xd), .xc(m_xc),
+    .xd(m_xd), .xc(m_xc), .sof(m_sof), .sof_lane4(m_sof_l4), .sof_user(m_sof_usr),
     .ev_frame(ev_tx_frame), .ev_pause(ev_tx_pause), .ev_underflow(ev_tx_underflow), .ev_abort(ev_tx_abort));
 
 // RS transmit: link fault signalling (clause 46.3.4.2)
@@ -263,6 +317,36 @@ end
 
 omac_10g_pcs_tx #(.SCR_INIT(SCR_INIT)) u_pcs_tx (
     .clk(clk), .rst(tx_rst), .xd(t_xd), .xc(t_xc), .gt_tx_hdr(gt_tx_hdr), .gt_tx_data(gt_tx_data));
+
+// TX timestamp: the /S/ column leaves mac_tx on m_xd, then the RS register
+// (t_xd), the encoder register (blk) and the scrambler register (gt_tx_data):
+// sof delayed by three cycles is high while the /S/ block is on gt_tx_data.
+// The pulse also comes while the RS replaces frames by fault columns or idles
+// (the frame is then discarded), so the user's per-frame bookkeeping never
+// slips.
+if (TS_EN) begin : g_tx_ts
+    logic [2:0] sof_d = '0, l4_d = '0, usr_d = '0;
+    always_ff @(posedge clk) begin
+        sof_d <= {sof_d[1:0], m_sof};
+        l4_d  <= {l4_d[1:0], m_sof_l4};
+        usr_d <= {usr_d[1:0], m_sof_usr};
+        tx_ts_valid <= sof_d[2];
+        if (sof_d[2]) begin
+            tx_ts_val   <= tx_ts_in;
+            tx_ts_lane4 <= l4_d[2];
+            tx_ts_user  <= usr_d[2];
+        end
+        if (tx_rst) begin
+            sof_d       <= '0;
+            tx_ts_valid <= 1'b0;
+        end
+    end
+end else begin : g_tx_ts_off
+    assign tx_ts_valid = 1'b0;
+    assign tx_ts_val   = '0;
+    assign tx_ts_lane4 = 1'b0;
+    assign tx_ts_user  = 1'b0;
+end
 
 // ======================= RX watchdog (clk) =======================
 localparam int WDW = $clog2(RX_WATCHDOG + 1);

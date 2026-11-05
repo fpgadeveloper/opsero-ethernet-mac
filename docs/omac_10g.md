@@ -22,6 +22,11 @@ annex 31B (PAUSE); no third-party RTL.
 25GBASE-R without RS-FEC (clause 108) and without auto-negotiation: what a link partner forced to
 25G with FEC off expects. RS-FEC is not implemented.
 
+**Timestamp hooks (v0.2.0-dev, `TS_EN` = 1):** the start of every frame is time-stamped at the
+64B/66B block boundary of the transceiver interface, in both directions, for IEEE 1588 (PTP) and
+similar uses; see [Timestamp hooks](#timestamp-hooks). Simulated (10G and 25G) and
+implemented; not yet validated on hardware. With `TS_EN` = 0 (the default) the IP is unchanged.
+
 ## Architecture
 
 ![omac_10g block diagram](images/omac-10g-block.png)
@@ -220,6 +225,8 @@ blocks counted while the link was being acquired are normal (clear or snapshot a
 | `RX_FIFO_DEPTH` | 32 | RX clock-crossing FIFO entries |
 | `LOOPBACK_MODE` | 3'b010 | GT `LOOPBACK` code for `ctl_loopback` (near-end PMA; 3'b001 near-end PCS) |
 | `SCR_INIT` | all ones | scrambler state after reset (any value; the far end self-synchronises) |
+| `TS_EN` | 0 | 1 adds the timestamp hooks ([](#timestamp-hooks)); 0: the hook outputs are 0 and no logic is added |
+| `TS_W` | 32 | width of the time values `tx_ts_in` / `rx_ts_in` (any width >= 1; a design typically passes a cycle counter of 16-32 bits) |
 
 ## Timing and constraints
 
@@ -242,6 +249,100 @@ blocks counted while the link was being acquired are normal (clear or snapshot a
   about 7 (arbiter, pad, CRC, FCS merge, columns, RS, encoder, scrambler); RX from the block on
   `gt_rx_*` to `m_axis_rx` about 9 recovered-clock cycles + 4-5 `clk` cycles (FIFO) + one word of
   FCS delay; the last beat of a frame one cycle later (the verdict pipeline).
+
+## Timestamp hooks
+
+`TS_EN` = 1 adds time-stamping of the start of every frame, in both directions, at the closest
+point to the line that the 66-bit block interface offers: the **64B/66B block boundary on the
+transceiver interface** (`gt_tx_*` / `gt_rx_*`). The IP does not keep time itself: the user
+supplies a time value (`TS_W` bits, typically a free-running cycle counter of the time-of-day
+clock) and receives the value that was present when a frame's start block crossed the boundary.
+Converting that value into a time of day (and keeping the time of day) is the design's job.
+
+| Port | Dir | Clock | Meaning |
+|---|---|---|---|
+| `tx_ts_in[TS_W-1:0]` | in | `clk` | the time value of the current `clk` cycle |
+| `tx_ts_valid` | out | `clk` | one-cycle pulse per transmitted frame, **in transmit order**, in the cycle after the frame's /S/ block (block type 0x78 or 0x33) was on `gt_tx_data` / `gt_tx_hdr` |
+| `tx_ts_val[TS_W-1:0]` | out | `clk` | `tx_ts_in` of the cycle the /S/ block was on `gt_tx_data` (valid with `tx_ts_valid`) |
+| `tx_ts_lane4` | out | `clk` | the /S/ was in lane 4 (block 0x33): the frame starts 32 bits later inside the block |
+| `tx_ts_user` | out | `clk` | 1: a frame from `s_axis_tx`; 0: a PAUSE frame of the MAC itself |
+| `rx_ts_in[TS_W-1:0]` | in | `gt_rx_clk` | the same time base as seen in the receive clock (for a counter: gray-coded and synchronised by the user) |
+| `m_axis_rx_ts[TS_W-1:0]` | out | `clk` | `rx_ts_in` of the `gt_rx_clk` cycle in which the frame's /S/ block was on `gt_rx_data` (with `gt_rx_valid`); constant on **every beat** of the frame on `m_axis_rx` |
+| `m_axis_rx_ts_lane4` | out | `clk` | as `tx_ts_lane4`, for the received frame |
+
+### Rules
+
+* **Transmit:** exactly one `tx_ts_valid` per frame that reaches the wire, in the order the
+  frames were accepted on `s_axis_tx`, plus one (with `tx_ts_user` = 0) per PAUSE frame. A user
+  who needs a per-frame tag keeps a queue: push the tag when the first beat of a frame is accepted
+  on `s_axis_tx`, pop it on `tx_ts_valid && tx_ts_user`. Aborted and underflowed frames also get
+  their pulse (their /S/ was sent). While the RS replaces frames on the wire (link fault: Remote
+  Fault, received Remote Fault: idles, `ctl_tx_fault`) the frames are still consumed and still
+  get their pulse, so the queue never slips; the time is then when the frame would have started.
+* **Receive:** the time travels with the frame through the clock crossing (the RX FIFO grows by
+  `TS_W` + 1 bits per entry), so a delivered frame always carries its own time. Frames that are
+  not delivered (MAC Control frames, frames dropped while `ctl_rx_enable` = 0, nothing left after
+  the FCS strip) never surface; bad frames that are delivered (`tuser` = 1) carry their time like
+  good ones. There is no side FIFO to fall out of step.
+* `tx_ts_in` is sampled in `clk`, `rx_ts_in` in `gt_rx_clk`; the outputs are in `clk`.
+
+### Reference plane and constant offsets
+
+* **Reference plane:** the start of the 66-bit block that carries the frame's /S/, as presented on
+  the transceiver interface (`gt_tx_data` in `clk`, `gt_rx_data` in `gt_rx_clk`). Inside the IP
+  nothing is added: the transmit value is that of the `clk` cycle in which the /S/ block is on
+  `gt_tx_data`, the receive value that of the `gt_rx_clk` cycle in which it is on `gt_rx_data`.
+* **Lane 4:** a frame whose /S/ is in lane 4 starts 32 line bits later in the block than a lane-0
+  frame: **3.103 ns at 10GBASE-R** (32 x 66 / 64 bit times of 97 ps; one block = 6.4 ns) and
+  **1.241 ns at 25GBASE-R**. Add it when `*_lane4` = 1 if the timestamp should mark the frame's
+  first byte rather than the block.
+* **To the pins:** the transceiver's own transmit latency (from the user interface through the
+  asynchronous gearbox and the serialiser to TXP/TXN) and receive latency (from RXP/RXN through
+  the CDR, the deserialiser and the asynchronous gearbox) are outside the IP. They are constant
+  while the transceiver runs, are not specified for the asynchronous gearbox mode in the
+  transceiver's user guide, and may move by a fraction of an internal clock period when the
+  transceiver is reset (the gearbox FIFOs); a design calibrates them against a reference (for
+  PTP: `ptp4l` `egressLatency` / `ingressLatency`) and re-checks after a transceiver reset.
+* **Resolution:** one block (6.4 ns at 10G, 2.56 ns at 25G) on the transmit side, exact in the
+  `clk` domain. On the receive side the value comes from the user's synchroniser in `gt_rx_clk`:
+  for a counter of `clk` cycles gray-coded into `gt_rx_clk`, the receive value lags by a
+  constant pipeline (the synchroniser stages) plus a uniform quantisation of one `clk` period while
+  the two clocks are asynchronous; when the receive clock is frequency-locked to `clk` (SyncE),
+  the quantisation freezes into a constant.
+
+### Example (one port; the time base is a cycle counter of `clk`)
+
+```systemverilog
+logic [15:0] tick = '0, tick_g = '0;              // clk: cycle counter and its gray code
+always_ff @(posedge clk) begin tick <= tick + 1'b1; tick_g <= tick ^ (tick >> 1); end
+(* ASYNC_REG = "TRUE" *) logic [15:0] g0 = '0, g1 = '0;
+logic [15:0] rx_tick = '0;                         // gt_rx_clk: the counter, synchronised
+always_ff @(posedge gt_rx_clk) begin
+    g0 <= tick_g; g1 <= g0;
+    for (int i = 0; i < 16; i++) rx_tick[i] <= ^(g1 >> i);   // gray -> binary
+end
+omac_10g #(.TS_EN(1'b1), .TS_W(16)) u_mac (/* ... */ .tx_ts_in(tick), .rx_ts_in(rx_tick),
+    .tx_ts_valid(tsv), .tx_ts_val(tsval), .tx_ts_lane4(tsl4), .tx_ts_user(tsu),
+    .m_axis_rx_ts(rx_ts), .m_axis_rx_ts_lane4(rx_l4));
+```
+
+With this synchroniser the receive value is the tick of a `clk` cycle that started 3 to 4 `clk`
+periods before the /S/ cycle in `gt_rx_clk` (3.5 periods = 22.4 ns at 10G on average). A design
+that keeps the time of day of the last few dozen `clk` cycles indexed by the tick converts both
+values into the time of day exactly, including frequency changes and steps of its clock between
+the event and the conversion. The `max_delay -datapath_only` constraint of
+[Timing and constraints](#timing-and-constraints) also bounds the skew of the gray-coded bus.
+
+### Cost and verification
+
+About +45 LUT, +336 FF and +22 LUTRAM at `TS_W` = 32 (`clk`-side sample registers, the start
+flags through the transmit pipeline, the receive time through the PCS pipeline and the wider RX
+FIFO); timing at 156.25 MHz and 390.625 MHz is met ([](resources.md#omac_10g)). The regression
+tests `10g_ts` and `10g_ts25` ([](simulation.md)) check every transmit value against the position
+of its /S/ block in the wire capture (decoded by the Python model), the start lane and the
+PAUSE flag, and every receive value against the transmit value of the same frame plus the
+channel latency (hand-computed from the channel model), with aborts, underflows, line errors,
+oversize cuts, consumed PAUSE frames and back-to-back frames at the minimum gap.
 
 ## Resources and timing
 
