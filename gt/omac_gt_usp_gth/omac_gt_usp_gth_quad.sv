@@ -106,6 +106,7 @@ wire [3:0]   rxresetdone_c, rxcdrlock_c;
 wire  [3:0]  pmareset_c;
 wire [3:0]   qlock;
 wire         tx_done, rx_done, tx_active;
+logic        rx_done_s;            // rx_done (master RX user clock domain) in freerun_clk
 wire  [3:0]  lane_busy;            // freerun_clk, by lane
 wire  [3:0]  lane_done_s;          // RXRESETDONE of the lane's channel, synchronised
 wire  [3:0]  lane_act_s;           // the lane's RX user clock active, synchronised
@@ -148,7 +149,7 @@ for (genvar l = 0; l < 4; l++) begin : g_lane
     always_ff @(posedge freerun_clk) begin
         req_d <= req_s;
         case (lst)
-            L_IDLE: if (req_s && !req_d && rx_done) begin
+            L_IDLE: if (req_s && !req_d && rx_done_s) begin
                 lst <= L_PMA;
                 tmr <= 21'(RST_CYCLES);
             end
@@ -194,8 +195,9 @@ assign qpll_lock   = qlock[0];
 
 // per-lane readiness (freerun_clk): the IP's RX reset done, this lane's user clock
 // running, its channel's RX reset done, no per-lane reset in progress
+omac_sync_bit u_sync_rxdone (.clk(freerun_clk), .din(rx_done), .dout(rx_done_s));
 always_ff @(posedge freerun_clk) begin
-    for (int l = 0; l < 4; l++) gt_rx_ready[l] <= rx_done && lane_act_s[l] && lane_done_s[l] && !lane_busy[l];
+    for (int l = 0; l < 4; l++) gt_rx_ready[l] <= rx_done_s && lane_act_s[l] && lane_done_s[l] && !lane_busy[l];
     rx_reset_busy <= lane_busy;
 end
 

@@ -89,6 +89,8 @@ foreach line $lines {
     if {$extra eq "gt" || $extra eq "gtquad"} {
         puts $fh "create_clock -period $per -name refclk \[get_ports refclk_p\]"
         puts $fh "create_clock -period 10.0 -name freerun \[get_ports freerun_clk\]"
+        # four independent lanes: the free-running clock only meets the GT clocks in synchronisers
+        if {$extra eq "gtquad"} { puts $fh "set_clock_groups -asynchronous -group \[get_clocks freerun\]" }
     } elseif {$ipn eq "omac_40g"} {
         puts $fh "create_clock -period $per -name clk \[get_ports clk\]"
         set grp "-group clk"

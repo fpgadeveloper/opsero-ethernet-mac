@@ -13,10 +13,15 @@ FIFO is LUTRAM.
 |---|---|---|---:|---:|---:|---:|---:|
 | omac_10g, defaults (10GBASE-R) | xczu7ev-ffvc1156-2-e | 156.25 MHz (6.4 ns) | 3,482 | 44 | 2,348 | 0 | **+2.789 ns** routed |
 | omac_10g, `SPEED` = 25 (25GBASE-R) | xcku5p-ffvb676-2-e | 390.625 MHz (2.56 ns) | 3,607 | 44 | 2,355 | 0 | **+0.284 ns** routed |
+| omac_10g, `TS_EN` = 1 (timestamp hooks, `TS_W` 32; v0.2.0-dev) | xczu7ev-ffvc1156-2-e | 156.25 MHz (6.4 ns) | 3,513 | 66 | 2,684 | 0 | **+3.139 ns** routed |
+| omac_10g, `SPEED` = 25, `TS_EN` = 1 (v0.2.0-dev) | xcku5p-ffvb676-2-e | 390.625 MHz (2.56 ns) | 3,639 | 66 | 2,691 | 0 | **+0.212 ns** routed |
 | omac_10g, `PAUSE_EN` = 0 (before the 25G pipeline stages) | xczu7ev-ffvc1156-2-e | 156.25 MHz | 3,069 | 44 | 1,869 | 0 | +2.526 ns (synthesis) |
 | omac_10g + omac_gt_usp_gth (gtwizard, one channel; before the 25G pipeline stages) | xczu7ev-ffvc1156-2-e | refclk 156.25 MHz, derived TX / RX user clocks | 3,343 | 44 | 2,199 | 0 | +2.379 ns (synthesis); 1 GTHE4_CHANNEL, 1 GTHE4_COMMON, 4 BUFG_GT |
+| 4 x omac_10g (`TS_EN` = 1, `TS_W` 16) + omac_gt_usp_gth_quad (gtwizard, four independent lanes of one quad; v0.2.0-dev) | xczu7ev-ffvc1156-2-e | refclk 156.25 MHz, derived TX / RX user clocks | 13,372 | 208 | 9,200 | 0 | **+1.749 ns** routed (WHS +0.011); 4 GTHE4_CHANNEL, 1 GTHE4_COMMON, 10 BUFG_GT (+1 when `refclk_mon` is used) |
 
-On the ZU7EV the 10G IP is 1.4 % of the LUTs and 0.4 % of the registers. 25GBASE-R closes
+v0.2.0-dev rerun of the default job (`TS_EN` = 0): 3,468 LUT, 44 LUTRAM, 2,348 FF, +2.925 ns routed: the
+register count of v0.1.0 exactly (the hooks add nothing when off; the LUT count moves with
+place-and-route). On the ZU7EV the 10G IP is 1.4 % of the LUTs and 0.4 % of the registers. 25GBASE-R closes
 timing at 390.625 MHz thanks to two pipeline stages (transmit CRC and FCS merge split, receive
 frame verdict two cycles after the end word); before them the 25G build missed by 1.37 ns
 (fmax about 255 MHz).
