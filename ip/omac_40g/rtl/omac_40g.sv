@@ -299,7 +299,7 @@ end
 // ======================= PAUSE timers (clk) =======================
 logic pq_req, pq_xon, pq_ack;
 omac_pause #(.BIT_TIMES_PER_CLK(256)) u_pause (
-    .clk(clk), .rst(tx_rst),
+    .clk(clk), .rst(tx_rst), .ce(1'b1),
     .rx_load(p_load), .rx_quanta(stat_rx_pause_quanta), .rx_pause_req(stat_rx_pause_req),
     .tx_send(PAUSE_EN && ctl_tx_pause_send), .tx_refresh(ctl_tx_pause_refresh),
     .tx_req(pq_req), .tx_req_xon(pq_xon), .tx_ack(pq_ack), .tx_xoff_active(stat_tx_pause_active));

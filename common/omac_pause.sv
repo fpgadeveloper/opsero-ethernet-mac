@@ -11,6 +11,10 @@
 //   time tx_quanta), repeated every tx_refresh quanta while tx_send stays high
 //   (0 = no repeat); its falling edge requests one XON. tx_req / tx_req_xon go to
 //   the frame source, which pulses tx_ack when it has taken the request.
+//   ce: the timers count only in enabled cycles (omac_10g with USXGMII: one
+//   enabled cycle = one 64-bit column at the replicated rate = 64 bit times of
+//   the link speed); rx_load, tx_send and tx_ack act in every cycle. Tie to 1
+//   for a datapath that runs at its line rate.
 //
 // Copyright (c) 2026 Opsero Electronic Design Inc.
 
@@ -23,6 +27,7 @@ module omac_pause #(
 ) (
     input  wire logic        clk,
     input  wire logic        rst,
+    input  wire logic        ce,
 
     input  wire logic        rx_load,
     input  wire logic [15:0] rx_quanta,
@@ -42,6 +47,7 @@ localparam int BPC = BIT_TIMES_PER_CLK;
 logic [25:0] rx_timer = '0;
 always_ff @(posedge clk) begin
     if (rx_load)                 rx_timer <= {rx_quanta, 9'd0};
+    else if (!ce)                rx_timer <= rx_timer;
     else if (rx_timer > 26'(BPC)) rx_timer <= rx_timer - 26'(BPC);
     else                         rx_timer <= '0;
     if (rst) rx_timer <= '0;
@@ -59,7 +65,7 @@ always_ff @(posedge clk) begin
             tx_xoff_active <= 1'b1;
             ref_timer <= {tx_refresh, 9'd0};
         end
-    end else if (ref_timer != '0) begin
+    end else if (ce && ref_timer != '0) begin
         if (ref_timer > 26'(BPC)) ref_timer <= ref_timer - 26'(BPC);
         else begin
             ref_timer <= '0;

@@ -22,6 +22,11 @@
 // frame came from s_t* (0: a PAUSE frame of the MAC). Every frame that reaches
 // the columns gets exactly one /S/, so one `sof` (the timestamp hooks of
 // omac_10g count on it).
+// Clock enable (USXGMII rate adaptation): with `ce` low the whole MAC stands
+// still (every register holds, s_tready is low); the pulse outputs (sof, ev_*,
+// pause_ack) last one cycle, in the cycle after an enabled edge, and the column
+// on xd/xc is held until the next enabled edge. omac_10g ties `ce` to 1 unless
+// USXGMII_EN = 1, so the logic is then exactly the plain MAC.
 //
 // Copyright (c) 2026 Opsero Electronic Design Inc.
 
@@ -35,6 +40,7 @@ module omac_10g_mac_tx #(
 ) (
     input  wire logic        clk,
     input  wire logic        rst,
+    input  wire logic        ce,            // clock enable (1 = every cycle)
 
     input  wire logic [63:0] s_tdata,
     input  wire logic [7:0]  s_tkeep,
@@ -75,13 +81,13 @@ logic [63:0] pf_tdata;
 logic [7:0]  pf_tkeep;
 logic        pf_tvalid, pf_tlast, pf_busy;
 logic        a_ready;
-wire         pf_start = PAUSE_EN && (sel == A_NONE) && pause_req && tx_enable && !pf_busy;
+wire         pf_start = PAUSE_EN && ce && (sel == A_NONE) && pause_req && tx_enable && !pf_busy;
 
 omac_pause_frame #(.DATA_WIDTH(64)) u_pf (
     .clk(clk), .rst(rst), .start(pf_start),
     .pause_time(pause_req_xon ? 16'd0 : pause_quanta), .mac_addr(mac_addr), .busy(pf_busy),
     .m_axis_tdata(pf_tdata), .m_axis_tkeep(pf_tkeep), .m_axis_tvalid(pf_tvalid),
-    .m_axis_tready(sel == A_PAUSE && a_ready), .m_axis_tlast(pf_tlast));
+    .m_axis_tready(sel == A_PAUSE && a_ready && ce), .m_axis_tlast(pf_tlast));
 
 wire         a_valid = (sel == A_USER) ? s_tvalid : (sel == A_PAUSE) ? pf_tvalid : 1'b0;
 wire  [63:0] a_data  = (sel == A_PAUSE) ? pf_tdata : s_tdata;
@@ -89,12 +95,12 @@ wire  [7:0]  a_keep  = (sel == A_PAUSE) ? pf_tkeep : s_tkeep;
 wire         a_last  = (sel == A_PAUSE) ? pf_tlast : s_tlast;
 wire         a_user  = (sel == A_USER) && s_tuser;
 wire         a_isu   = (sel == A_USER);        // the beat belongs to a user frame
-assign s_tready = (sel == A_USER) && a_ready;
+assign s_tready = (sel == A_USER) && a_ready && ce;
 
 always_ff @(posedge clk) begin
     pause_ack <= 1'b0;
     ev_pause  <= 1'b0;
-    case (sel)
+    if (ce) case (sel)
         A_NONE: begin
             if (pf_start) begin
                 sel       <= A_PAUSE;
@@ -141,42 +147,44 @@ assign a_ready = (!p_valid || p_ready) && !pad;
 
 always_ff @(posedge clk) begin
     logic [3:0] n;
-    if (p_valid && p_ready) p_valid <= 1'b0;
-    if (pad && (!p_valid || p_ready)) begin
-        p_valid <= 1'b1;
-        p_data  <= '0;
-        p_err   <= 1'b0;
-        if (pcnt + 7'd8 >= 7'd60) begin
-            p_n    <= 4'(60 - pcnt);
-            p_last <= 1'b1;
-            pad    <= 1'b0;
-            pcnt   <= '0;
-        end else begin
-            p_n    <= 4'd8;
-            p_last <= 1'b0;
-            pcnt   <= pcnt + 7'd8;
-        end
-    end else if (a_valid && a_ready) begin
-        n = a_last ? keep_n(a_keep) : 4'd8;
-        p_valid <= 1'b1;
-        p_data  <= a_data & keep_mask(n);
-        p_err   <= a_user;
-        p_usr   <= a_isu;
-        if (a_last && TX_PAD && (pcnt + 7'(n) < 7'd60)) begin
+    if (ce) begin
+        if (p_valid && p_ready) p_valid <= 1'b0;
+        if (pad && (!p_valid || p_ready)) begin
+            p_valid <= 1'b1;
+            p_data  <= '0;
+            p_err   <= 1'b0;
             if (pcnt + 7'd8 >= 7'd60) begin
                 p_n    <= 4'(60 - pcnt);
                 p_last <= 1'b1;
+                pad    <= 1'b0;
                 pcnt   <= '0;
             end else begin
                 p_n    <= 4'd8;
                 p_last <= 1'b0;
-                pad    <= 1'b1;
                 pcnt   <= pcnt + 7'd8;
             end
-        end else begin
-            p_n    <= n;
-            p_last <= a_last;
-            pcnt   <= a_last ? 7'd0 : ((pcnt >= 7'd64) ? pcnt : pcnt + 7'd8);
+        end else if (a_valid && a_ready) begin
+            n = a_last ? keep_n(a_keep) : 4'd8;
+            p_valid <= 1'b1;
+            p_data  <= a_data & keep_mask(n);
+            p_err   <= a_user;
+            p_usr   <= a_isu;
+            if (a_last && TX_PAD && (pcnt + 7'(n) < 7'd60)) begin
+                if (pcnt + 7'd8 >= 7'd60) begin
+                    p_n    <= 4'(60 - pcnt);
+                    p_last <= 1'b1;
+                    pcnt   <= '0;
+                end else begin
+                    p_n    <= 4'd8;
+                    p_last <= 1'b0;
+                    pad    <= 1'b1;
+                    pcnt   <= pcnt + 7'd8;
+                end
+            end else begin
+                p_n    <= n;
+                p_last <= a_last;
+                pcnt   <= a_last ? 7'd0 : ((pcnt >= 7'd64) ? pcnt : pcnt + 7'd8);
+            end
         end
     end
     if (rst) begin
@@ -214,17 +222,19 @@ assign fcs_sh  = {64'd0, ~q_crc} << (8 * q_n);
 assign q_ready = (!f_valid || f_ready) && !extra;
 
 always_ff @(posedge clk) begin
-    if (q_valid && q_ready) q_valid <= 1'b0;
-    if (p_valid && p_ready) begin
-        crc     <= crc_new;
-        first   <= p_last;
-        q_valid <= 1'b1;
-        q_data  <= p_data;
-        q_n     <= p_n;
-        q_last  <= p_last;
-        q_err   <= p_err;
-        q_usr   <= p_usr;
-        q_crc   <= crc_new;
+    if (ce) begin
+        if (q_valid && q_ready) q_valid <= 1'b0;
+        if (p_valid && p_ready) begin
+            crc     <= crc_new;
+            first   <= p_last;
+            q_valid <= 1'b1;
+            q_data  <= p_data;
+            q_n     <= p_n;
+            q_last  <= p_last;
+            q_err   <= p_err;
+            q_usr   <= p_usr;
+            q_crc   <= crc_new;
+        end
     end
     if (rst) begin
         q_valid <= 1'b0;
@@ -233,33 +243,35 @@ always_ff @(posedge clk) begin
 end
 
 always_ff @(posedge clk) begin
-    if (f_valid && f_ready) f_valid <= 1'b0;
-    if (extra && (!f_valid || f_ready)) begin
-        f_valid <= 1'b1;
-        f_data  <= {32'd0, extra_d};
-        f_n     <= extra_n;
-        f_last  <= 1'b1;
-        f_err   <= 1'b0;
-        extra   <= 1'b0;
-    end else if (q_valid && q_ready) begin
-        f_valid <= 1'b1;
-        f_err   <= q_err;
-        f_usr   <= q_usr;
-        if (!q_last) begin
-            f_data <= q_data;
-            f_n    <= 4'd8;
-            f_last <= 1'b0;
-        end else if (q_n <= 4'd4) begin
-            f_data <= q_data | fcs_sh[63:0];
-            f_n    <= q_n + 4'd4;
-            f_last <= 1'b1;
-        end else begin
-            f_data  <= q_data | fcs_sh[63:0];
-            f_n     <= 4'd8;
-            f_last  <= 1'b0;
-            extra   <= 1'b1;
-            extra_d <= fcs_sh[95:64];
-            extra_n <= q_n - 4'd4;
+    if (ce) begin
+        if (f_valid && f_ready) f_valid <= 1'b0;
+        if (extra && (!f_valid || f_ready)) begin
+            f_valid <= 1'b1;
+            f_data  <= {32'd0, extra_d};
+            f_n     <= extra_n;
+            f_last  <= 1'b1;
+            f_err   <= 1'b0;
+            extra   <= 1'b0;
+        end else if (q_valid && q_ready) begin
+            f_valid <= 1'b1;
+            f_err   <= q_err;
+            f_usr   <= q_usr;
+            if (!q_last) begin
+                f_data <= q_data;
+                f_n    <= 4'd8;
+                f_last <= 1'b0;
+            end else if (q_n <= 4'd4) begin
+                f_data <= q_data | fcs_sh[63:0];
+                f_n    <= q_n + 4'd4;
+                f_last <= 1'b1;
+            end else begin
+                f_data  <= q_data | fcs_sh[63:0];
+                f_n     <= 4'd8;
+                f_last  <= 1'b0;
+                extra   <= 1'b1;
+                extra_d <= fcs_sh[95:64];
+                extra_n <= q_n - 4'd4;
+            end
         end
     end
     if (rst) begin
@@ -312,101 +324,103 @@ always_ff @(posedge clk) begin
     ev_underflow <= 1'b0;
     ev_abort     <= 1'b0;
     sof          <= 1'b0;
-    xd <= IDLE_D;
-    xc <= 8'hFF;
-    case (cst)
-        C_IDLE: begin
-            if (f_valid && gap >= gmin) begin
-                xd  <= S0_D;
-                xc  <= 8'h01;
-                sof       <= 1'b1;
-                sof_lane4 <= 1'b0;
-                sof_user  <= f_usr;
-                dic <= dic_next(dic, gap);
-                cst <= C_D0;
-            end else if (f_valid && gap + 7'd4 >= gmin) begin
-                xd  <= S4_D;
-                xc  <= 8'h1F;
-                sof       <= 1'b1;
-                sof_lane4 <= 1'b1;
-                sof_user  <= f_usr;
-                h   <= S4_H;
-                dic <= dic_next(dic, gap + 7'd4);
-                cst <= C_D4;
-            end else begin
-                gap <= (gap >= 7'd56) ? 7'd64 : gap + 7'd8;
-            end
-        end
-        C_D0: begin
-            if (!f_valid || f_err) begin
-                xd  <= ERR_D;
-                xc  <= 8'hFF;
-                gap <= 7'd8;
-                ev_underflow <= !f_valid;
-                ev_abort     <= f_valid;
-                cst <= (f_valid && f_last) ? C_IDLE : C_DRAIN;
-            end else if (!f_last) begin
-                xd <= f_data;
-                xc <= 8'h00;
-            end else if (f_n == 4'd8) begin
-                xd  <= f_data;
-                xc  <= 8'h00;
-                cst <= C_T0;
-            end else begin
-                tc   = term_col(f_data, f_n);
-                xd  <= tc[63:0];
-                xc  <= tc[71:64];
-                gap <= 7'd8 - 7'(f_n);
-                ev_frame <= 1'b1;
-                cst <= C_IDLE;
-            end
-        end
-        C_D4: begin
-            if (!f_valid || f_err) begin
-                xd  <= ERR_D;
-                xc  <= 8'hFF;
-                gap <= 7'd8;
-                ev_underflow <= !f_valid;
-                ev_abort     <= f_valid;
-                cst <= (f_valid && f_last) ? C_IDLE : C_DRAIN;
-            end else if (!f_last || f_n >= 4'd4) begin
-                xd <= {f_data[31:0], h};
-                xc <= 8'h00;
-                h  <= f_data[63:32];
-                if (f_last && f_n == 4'd4) cst <= C_T0;
-                else if (f_last) begin
-                    hn  <= 3'(f_n - 4'd4);
-                    cst <= C_TAIL;
+    if (ce) begin
+        xd <= IDLE_D;
+        xc <= 8'hFF;
+        case (cst)
+            C_IDLE: begin
+                if (f_valid && gap >= gmin) begin
+                    xd  <= S0_D;
+                    xc  <= 8'h01;
+                    sof       <= 1'b1;
+                    sof_lane4 <= 1'b0;
+                    sof_user  <= f_usr;
+                    dic <= dic_next(dic, gap);
+                    cst <= C_D0;
+                end else if (f_valid && gap + 7'd4 >= gmin) begin
+                    xd  <= S4_D;
+                    xc  <= 8'h1F;
+                    sof       <= 1'b1;
+                    sof_lane4 <= 1'b1;
+                    sof_user  <= f_usr;
+                    h   <= S4_H;
+                    dic <= dic_next(dic, gap + 7'd4);
+                    cst <= C_D4;
+                end else begin
+                    gap <= (gap >= 7'd56) ? 7'd64 : gap + 7'd8;
                 end
-            end else begin
-                tc   = term_col({f_data[31:0], h}, f_n + 4'd4);
-                xd  <= tc[63:0];
-                xc  <= tc[71:64];
-                gap <= 7'd4 - 7'(f_n);
+            end
+            C_D0: begin
+                if (!f_valid || f_err) begin
+                    xd  <= ERR_D;
+                    xc  <= 8'hFF;
+                    gap <= 7'd8;
+                    ev_underflow <= !f_valid;
+                    ev_abort     <= f_valid;
+                    cst <= (f_valid && f_last) ? C_IDLE : C_DRAIN;
+                end else if (!f_last) begin
+                    xd <= f_data;
+                    xc <= 8'h00;
+                end else if (f_n == 4'd8) begin
+                    xd  <= f_data;
+                    xc  <= 8'h00;
+                    cst <= C_T0;
+                end else begin
+                    tc   = term_col(f_data, f_n);
+                    xd  <= tc[63:0];
+                    xc  <= tc[71:64];
+                    gap <= 7'd8 - 7'(f_n);
+                    ev_frame <= 1'b1;
+                    cst <= C_IDLE;
+                end
+            end
+            C_D4: begin
+                if (!f_valid || f_err) begin
+                    xd  <= ERR_D;
+                    xc  <= 8'hFF;
+                    gap <= 7'd8;
+                    ev_underflow <= !f_valid;
+                    ev_abort     <= f_valid;
+                    cst <= (f_valid && f_last) ? C_IDLE : C_DRAIN;
+                end else if (!f_last || f_n >= 4'd4) begin
+                    xd <= {f_data[31:0], h};
+                    xc <= 8'h00;
+                    h  <= f_data[63:32];
+                    if (f_last && f_n == 4'd4) cst <= C_T0;
+                    else if (f_last) begin
+                        hn  <= 3'(f_n - 4'd4);
+                        cst <= C_TAIL;
+                    end
+                end else begin
+                    tc   = term_col({f_data[31:0], h}, f_n + 4'd4);
+                    xd  <= tc[63:0];
+                    xc  <= tc[71:64];
+                    gap <= 7'd4 - 7'(f_n);
+                    ev_frame <= 1'b1;
+                    cst <= C_IDLE;
+                end
+            end
+            C_T0: begin
+                xd  <= {{7{XG_IDLE}}, XG_TERM};
+                xc  <= 8'hFF;
+                gap <= 7'd8;
                 ev_frame <= 1'b1;
                 cst <= C_IDLE;
             end
-        end
-        C_T0: begin
-            xd  <= {{7{XG_IDLE}}, XG_TERM};
-            xc  <= 8'hFF;
-            gap <= 7'd8;
-            ev_frame <= 1'b1;
-            cst <= C_IDLE;
-        end
-        C_TAIL: begin
-            tc   = term_col({32'd0, h}, 4'(hn));
-            xd  <= tc[63:0];
-            xc  <= tc[71:64];
-            gap <= 7'd8 - 7'(hn);
-            ev_frame <= 1'b1;
-            cst <= C_IDLE;
-        end
-        default: begin   // C_DRAIN: discard the rest of an aborted frame
-            gap <= (gap >= 7'd56) ? 7'd64 : gap + 7'd8;
-            if (f_valid && f_last) cst <= C_IDLE;
-        end
-    endcase
+            C_TAIL: begin
+                tc   = term_col({32'd0, h}, 4'(hn));
+                xd  <= tc[63:0];
+                xc  <= tc[71:64];
+                gap <= 7'd8 - 7'(hn);
+                ev_frame <= 1'b1;
+                cst <= C_IDLE;
+            end
+            default: begin   // C_DRAIN: discard the rest of an aborted frame
+                gap <= (gap >= 7'd56) ? 7'd64 : gap + 7'd8;
+                if (f_valid && f_last) cst <= C_IDLE;
+            end
+        endcase
+    end
     if (rst) begin
         cst <= C_IDLE;
         gap <= 7'd64;
