@@ -28,7 +28,7 @@ Opsero's reference designs; the designs that use it are listed in
 | Transceiver wrapper | Family | Maturity (v0.1.0) |
 |---|---|---|
 | [`gt/omac_gt_usp_gth`](docs/gt_usp_gth.md) | UltraScale+ GTH, 64B/66B asynchronous gearbox (gtwizard_ultrascale, free); one lane (`omac_gt_usp_gth`), four (`omac_gt_usp_gth_x4`, per-lane RX clocks), or four independent omac_10g lanes of one quad (`omac_gt_usp_gth_quad`, v0.2.0-dev, per-lane RX reset) | **hardware-proven** with both IPs (ZCU106; `BIT_REVERSE` = 1 confirmed); `_quad`: synthesised, not yet on hardware |
-| `gt/omac_gt_usp_gty` | UltraScale+ GTY | planned |
+| [`gt/omac_gt_usp_gty`](docs/gt_usp_gth.md#gty-omac_gt_usp_gty_quad) | UltraScale+ GTY, the same gtwizard settings: one to four independent omac_10g lanes of one quad (`omac_gt_usp_gty_quad`, v0.2.0-dev; `omac_gt_usp_gth_quad` takes the same lane count) | simulated with the transceiver models, routed out of context; not yet on hardware |
 
 The interface every IP implements is defined in [docs/interface.md](docs/interface.md). Hardware
 validation details: [docs/hardware.md](docs/hardware.md); planned work: [docs/roadmap.md](docs/roadmap.md).

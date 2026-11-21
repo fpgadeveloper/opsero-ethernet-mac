@@ -18,6 +18,13 @@ ROOT = os.path.dirname(HERE)
 T10 = os.path.join(ROOT, 'ip', 'omac_10g', 'sim', 'test_omac_10g.py')
 T40 = os.path.join(ROOT, 'ip', 'omac_40g', 'sim', 'test_omac_40g.py')
 U40 = os.path.join(ROOT, 'ip', 'omac_40g', 'sim', 'test_40g_units.py')
+TGT = os.path.join(HERE, 'gt', 'test_gt.py')
+# transceiver-level tests (vendor GT models, slow): run only with --gt
+GT_TESTS = [
+    ('gt_gty_loop', TGT, ['gty', '40'], ['gty', '8'], 'omac_gt_usp_gty_quad, two lanes crossed: reset, CDR, '
+     'gearbox slip, block lock, link up, frames both ways (GTY models, xcku5p)'),
+    ('gt_gth_loop', TGT, ['gth', '40'], ['gth', '8'], 'omac_gt_usp_gth_quad, the same on GTH (xczu7ev, lane map 0x01)'),
+]
 
 # name: (script, full arguments, quick arguments, what it covers)
 TESTS = [
@@ -70,7 +77,7 @@ def main():
     sel = args[args.index('-k') + 1] if '-k' in args else None
     results = []
     t_all = time.time()
-    for name, script, full, qargs, what in TESTS:
+    for name, script, full, qargs, what in (GT_TESTS if '--gt' in args else TESTS):
         if sel and sel not in name:
             continue
         path = script if os.path.isabs(script) else os.path.join(HERE, script)

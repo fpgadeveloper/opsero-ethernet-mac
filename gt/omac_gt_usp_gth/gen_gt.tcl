@@ -48,6 +48,9 @@
 proc omac_gen_gth {ip_dir {channel X0Y14} {freerun_mhz 100} {name omac_gth_10g} {extra_ports {}} {refclk clk0}} {
     set master [lindex $channel 0]
     if {$refclk ni {clk0 clk1}} { error "omac_gen_gth: refclk must be clk0 or clk1, got $refclk" }
+    # MGTREFCLK0 is the gtwizard's default source of every channel and is named for the
+    # master only; MGTREFCLK1 must be named for every channel (one QPLL0, one source)
+    set rsrc [expr {$refclk eq "clk0" ? "$master clk0" : [join [lmap c [lsort -dictionary $channel] {list $c $refclk}]]}]
     # per-channel RX user clocks in the wrapper for several channels and for the _quad IPs
     set rxuc [expr {([llength $channel] > 1 || [llength $extra_ports]) ? "EXAMPLE_DESIGN" : "CORE"}]
     file mkdir $ip_dir
@@ -58,8 +61,8 @@ proc omac_gen_gth {ip_dir {channel X0Y14} {freerun_mhz 100} {name omac_gth_10g} 
         CONFIG.CHANNEL_ENABLE            [lsort $channel] \
         CONFIG.TX_MASTER_CHANNEL         $master \
         CONFIG.RX_MASTER_CHANNEL         $master \
-        CONFIG.TX_REFCLK_SOURCE          "$master $refclk" \
-        CONFIG.RX_REFCLK_SOURCE          "$master $refclk" \
+        CONFIG.TX_REFCLK_SOURCE          $rsrc \
+        CONFIG.RX_REFCLK_SOURCE          $rsrc \
         CONFIG.TX_USER_DATA_WIDTH        64 \
         CONFIG.RX_USER_DATA_WIDTH        64 \
         CONFIG.FREERUN_FREQUENCY         $freerun_mhz \

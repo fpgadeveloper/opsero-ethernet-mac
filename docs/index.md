@@ -32,7 +32,7 @@ clock) is the design's ([](gt_usp_gth.md#board-placement)).
 | Transceiver wrapper | Family | Maturity |
 |---|---|---|
 | [`omac_gt_usp_gth`, `omac_gt_usp_gth_x4`](gt_usp_gth.md) | UltraScale+ GTH, 64B/66B asynchronous gearbox (AMD `gtwizard_ultrascale`, free); one lane (omac_10g) or four lanes of one quad with per-lane receive clocks (omac_40g) | **hardware-proven** with both IPs (ZCU106, [](hardware.md)) |
-| `omac_gt_usp_gty` | UltraScale+ GTY | planned |
+| [`omac_gt_usp_gty_quad`](gt_usp_gth.md#gty-omac_gt_usp_gty_quad); `omac_gt_usp_gth_quad` with 1-4 lanes | UltraScale+ GTY (and GTH): one to four independent omac_10g lanes of one quad, `MGTREFCLK0` / `MGTREFCLK1` | v0.2.0-dev: simulated with the transceiver models (link-up and frames), routed out of context; not yet on hardware |
 
 Every IP comes with a self-checking simulation regression against an independent Python model
 of the standard ([](simulation.md)) and out-of-context implementation results

@@ -50,6 +50,9 @@ proc omac_gen_gty_quad {ip_dir {channels {X0Y12 X0Y13}} {freerun_mhz 100} {name 
     }
     if {[llength [lsort -unique $quads]] != 1} { error "omac_gen_gty_quad: channels $channels are not in one quad" }
     set master [lindex $channels 0]
+    # MGTREFCLK0 is the gtwizard's default source of every channel and is named for the
+    # master only; MGTREFCLK1 must be named for every channel (one QPLL0, one source)
+    set rsrc [expr {$refclk eq "clk0" ? "$master clk0" : [join [lmap c [lsort -dictionary $channels] {list $c $refclk}]]}]
     file mkdir $ip_dir
     create_ip -name gtwizard_ultrascale -vendor xilinx.com -library ip -module_name $name -dir $ip_dir -force
     set ip [get_ips $name]
@@ -58,8 +61,8 @@ proc omac_gen_gty_quad {ip_dir {channels {X0Y12 X0Y13}} {freerun_mhz 100} {name 
         CONFIG.CHANNEL_ENABLE            [lsort -dictionary $channels] \
         CONFIG.TX_MASTER_CHANNEL         $master \
         CONFIG.RX_MASTER_CHANNEL         $master \
-        CONFIG.TX_REFCLK_SOURCE          "$master $refclk" \
-        CONFIG.RX_REFCLK_SOURCE          "$master $refclk" \
+        CONFIG.TX_REFCLK_SOURCE          $rsrc \
+        CONFIG.RX_REFCLK_SOURCE          $rsrc \
         CONFIG.TX_INT_DATA_WIDTH         32 \
         CONFIG.RX_INT_DATA_WIDTH         32 \
         CONFIG.TX_USER_DATA_WIDTH        64 \
@@ -81,8 +84,8 @@ proc omac_gen_gty_quad {ip_dir {channels {X0Y12 X0Y13}} {freerun_mhz 100} {name 
     if {[lsort -dictionary [get_property CONFIG.CHANNEL_ENABLE $ip]] ne [lsort -dictionary $channels]} {
         error "omac_gen_gty_quad: CHANNEL_ENABLE = [get_property CONFIG.CHANNEL_ENABLE $ip], expected $channels"
     }
-    if {[get_property CONFIG.TX_REFCLK_SOURCE $ip] ne "$master $refclk"} {
-        error "omac_gen_gty_quad: TX_REFCLK_SOURCE = [get_property CONFIG.TX_REFCLK_SOURCE $ip], expected $master $refclk"
+    if {[get_property CONFIG.TX_REFCLK_SOURCE $ip] ne $rsrc} {
+        error "omac_gen_gty_quad: TX_REFCLK_SOURCE = [get_property CONFIG.TX_REFCLK_SOURCE $ip], expected $rsrc"
     }
     generate_target {instantiation_template synthesis simulation} $ip
     return $ip

@@ -9,6 +9,21 @@ Work in progress; merged to `main` and tagged after hardware validation.
 
 ### Added
 
+- **gt/omac_gt_usp_gty** (UltraScale+ GTY): `omac_gen_gty_quad` (gtwizard preset
+  `GTY-10GBASE-R`, set like the GTH quad IP) and `omac_gt_usp_gty_quad`, the GTY twin of
+  `omac_gt_usp_gth_quad` (same parameters and ports, serial pins `gty_*`); `omac_ch_of_lane`
+  computes `CH_OF_LANE` from a site list. Simulated with the GT models (two lanes crossed,
+  link-up and frames both ways, `sim/gt`), routed out of context with two `omac_10g` on xcku5p.
+- **omac_gt_usp_gth_quad / omac_gen_gth_quad**: `NLANES` (one to four channels of one quad, the
+  others not instantiated; the generator checks that the sites share a quad), `REFCLK_SEL` /
+  `refclk` (`MGTREFCLK0` or `MGTREFCLK1` of the quad), per-lane DRP ports on `freerun_clk` (tie
+  `drp_en` / `drp_we` to 0 when unused: a design written for the earlier port list that leaves
+  them unconnected gets them tied to 0 by synthesis, with warnings). The defaults keep the
+  four-lane behaviour.
+- **Verification:** `sim/gt` transceiver-level loop simulation of both quad wrappers
+  (`python3 -I sim/run_tests.py --gt`, not part of `make sim`: the GT models are slow); OOC jobs
+  `make synth-gtq` (two lanes GTY xcku5p and GTH xczu7ev routed, four lanes on `MGTREFCLK1` and
+  one lane synthesised).
 - **omac_10g timestamp hooks** (`TS_EN` = 1, `TS_W`): the start of every frame is time-stamped
   at the 64B/66B block boundary of the transceiver interface. Transmit: `tx_ts_valid` (one per
   frame, in transmit order, one cycle after the /S/ block was on `gt_tx_data`) with
@@ -40,6 +55,8 @@ Work in progress; merged to `main` and tagged after hardware validation.
 
 ### Not yet validated
 
+- `omac_gt_usp_gty_quad` and the two-lane / `MGTREFCLK1` configurations of the quad wrappers
+  on hardware.
 - The hooks and the quad wrapper on hardware (the first design to use them: an Opsero
   SyncE + PTP reference design for the quad SFP28 FMC on a ZCU106).
 

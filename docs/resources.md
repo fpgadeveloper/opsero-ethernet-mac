@@ -18,6 +18,8 @@ FIFO is LUTRAM.
 | omac_10g, `PAUSE_EN` = 0 (before the 25G pipeline stages) | xczu7ev-ffvc1156-2-e | 156.25 MHz | 3,069 | 44 | 1,869 | 0 | +2.526 ns (synthesis) |
 | omac_10g + omac_gt_usp_gth (gtwizard, one channel; before the 25G pipeline stages) | xczu7ev-ffvc1156-2-e | refclk 156.25 MHz, derived TX / RX user clocks | 3,343 | 44 | 2,199 | 0 | +2.379 ns (synthesis); 1 GTHE4_CHANNEL, 1 GTHE4_COMMON, 4 BUFG_GT |
 | 4 x omac_10g (`TS_EN` = 1, `TS_W` 16) + omac_gt_usp_gth_quad (gtwizard, four independent lanes of one quad; v0.2.0-dev) | xczu7ev-ffvc1156-2-e | refclk 156.25 MHz, derived TX / RX user clocks | 13,372 | 208 | 9,200 | 0 | **+1.749 ns** routed (WHS +0.011); 4 GTHE4_CHANNEL, 1 GTHE4_COMMON, 10 BUFG_GT (+1 when `refclk_mon` is used) |
+| 2 x omac_10g (`TS_EN` = 1, `TS_W` 16) + omac_gt_usp_gty_quad (`NLANES` = 2, GTY, sites X0Y12 X0Y13; v0.2.0-dev, `make synth-gtq`) | xcku5p-ffvb676-2-e | refclk 156.25 MHz, derived TX / RX user clocks | 6,747 | 104 | 4,712 | 0 | **+1.755 ns** routed (WHS +0.013); 2 GTYE4_CHANNEL, 1 GTYE4_COMMON |
+| 2 x omac_10g (`TS_EN` = 1, `TS_W` 16) + omac_gt_usp_gth_quad (`NLANES` = 2, GTH, sites X0Y14 X0Y13, `CH_OF_LANE` 0x01; v0.2.0-dev) | xczu7ev-ffvc1156-2-e | refclk 156.25 MHz, derived TX / RX user clocks | 6,750 | 104 | 4,712 | 0 | **+2.057 ns** routed (WHS +0.010); 2 GTHE4_CHANNEL, 1 GTHE4_COMMON |
 
 v0.2.0-dev rerun of the default job (`TS_EN` = 0): 3,468 LUT, 44 LUTRAM, 2,348 FF, +2.925 ns routed: the
 register count of v0.1.0 exactly (the hooks add nothing when off; the LUT count moves with

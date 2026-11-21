@@ -8,6 +8,8 @@
 #   make synth40-gt   a four-lane GTH gtwizard IP (one xczu7ev quad) synthesized with omac_40g
 #   make docs         build the documentation (sphinx, myst-parser, sphinx-rtd-theme)
 #   make clean
+#   make synth-gtq    omac_10g on the per-lane quad wrappers: GTY (xcku5p) and GTH (xczu7ev) jobs
+#   make sim-gt       transceiver-level loop simulation of the quad wrappers (GT models, slow)
 PYTHON ?= python3
 
 .PHONY: sim sim-quick synth synth-gt synth40 synth40-gt docs clean
@@ -35,3 +37,11 @@ docs:
 
 clean:
 	rm -rf sim/build ip/*/synth/build gt/*/build docs/_build
+
+# per-lane quad wrappers (GTH / GTY)
+.PHONY: synth-gtq sim-gt
+synth-gtq:
+	scripts/run_synth.sh ip/omac_10g/synth/jobs_gtq.txt ip/omac_10g/synth/build
+
+sim-gt:
+	$(PYTHON) -I sim/run_tests.py --gt
