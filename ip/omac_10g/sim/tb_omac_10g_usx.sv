@@ -24,6 +24,9 @@
 //   +stress=<p,...> +lpi=<p,...> +corrupt=<p,...> +strict=<p,...> +txfmt=<p,...>
 //   +resignal=<p,...>     per-phase knobs (percent / 0-1), default 0
 //   +lockloss=<p>         after phase p: a burst of invalid headers to the DUT
+//   +lpdown=<p>           after phase p: the PHY announces its copper link down
+//                         (word bit 15 = 0); the DUT must complete AN with the
+//                         link down (TB_LPDOWN)
 //   +lt=<n>               the DUT's link timer through ctl_usx_link_timer (0 = parameter)
 // Results: TB_PH (link per phase), TB_PE (phase end: counts), TB_DONE.
 //
@@ -234,7 +237,7 @@ endtask
 // ---------------- main ----------------
 initial begin
     string sp, s_stress, s_lpi, s_cor, s_strict, s_fmt, s_resig, fn;
-    int nph, an, lockloss, code, t, n_exp_dut, n_exp_phy, rx0, prx0, lt_arg;
+    int nph, an, lockloss, lpdown, code, t, n_exp_dut, n_exp_phy, rx0, prx0, lt_arg;
     int c_rep0, c_good0, c_bad0, c_fcs0, viol0, fill0, align0, gap0, slane0, dec0;
     tframe_t pf [$];
     if (!$value$plusargs("speeds=%s", sp)) sp = "3";
@@ -246,6 +249,7 @@ initial begin
     if (!$value$plusargs("txfmt=%s", s_fmt)) s_fmt = "";
     if (!$value$plusargs("resignal=%s", s_resig)) s_resig = "";
     if (!$value$plusargs("lockloss=%d", lockloss)) lockloss = -1;
+    if (!$value$plusargs("lpdown=%d", lpdown)) lpdown = -1;
     if (!$value$plusargs("lt=%d", lt_arg)) lt_arg = 0;
     if ($value$plusargs("oa=%s", fn)) fo = $fopen(fn, "w");
     if ($value$plusargs("ra=%s", fn)) fr = $fopen(fn, "w");
@@ -287,7 +291,7 @@ initial begin
         // link at the new speed: both ends at link, the DUT's speed = the PHY's
         t = 0;
         do begin @(posedge clk); t++; end
-        while (!(link && phy.link && usx_speed == 3'(code) && (an == 0 || (an_cpl && phy.st == 6))) && t < 3000000);
+        while (!(link && phy.link && usx_speed == 3'(code) && (an == 0 || (an_cpl && phy.st == 6))) && t < 2000000);
         repeat (200) @(posedge clk);
         $display("TB_PH p=%0d code=%0d link=%0d t=%0d dut_speed=%0d lp_word=0x%04x phy_dut_word=0x%04x phy_rep=%0d an_cpl=%0d an_starts=%0d an_done=%0d phy_an_done=%0d",
                  p, code, link, t, usx_speed, lp_word, phy.dut_word, phy.rep, an_cpl, n_an_s, n_an_d, phy.n_an_done);
@@ -313,9 +317,15 @@ initial begin
             n_exp_phy = txq.size();
         end
         phy.go = 1'b1;
-        t = 0;
-        while ((rx_n - rx0 < n_exp_dut || phy.rxq.size() - prx0 < n_exp_phy) && t < 30000000) begin
-            @(posedge clk); t++;
+        // until all frames are in, or no frame arrived for longer than a 9600-byte frame takes
+        begin
+            int last, tlast, lim;
+            t = 0; tlast = 0; last = 0;
+            lim = 50000 + 1250 * phy.rep;
+            while ((rx_n - rx0 < n_exp_dut || phy.rxq.size() - prx0 < n_exp_phy) && t - tlast < lim) begin
+                @(posedge clk); t++;
+                if (rx_n + phy.rxq.size() != last) begin last = rx_n + phy.rxq.size(); tlast = t; end
+            end
         end
         repeat (300) @(posedge clk);
         $display("TB_PE p=%0d rx=%0d exp_rx=%0d phy_rx=%0d exp_phy_rx=%0d t=%0d rep_err=%0d good=%0d bad=%0d fcs=%0d phy_viol=%0d phy_fill=%0d phy_align=%0d phy_gap=%0d phy_slane=%0d phy_dec=%0d ipg_min=%0d ipg_sum=%0d ipg_n=%0d phy_corrupt=%0d phy_ins=%0d phy_del=%0d phy_lpi=%0d phy_enc=%0d",
@@ -323,6 +333,19 @@ initial begin
                  cnt[5] - c_bad0, cnt[6] - c_fcs0, phy.n_rep_viol - viol0, phy.n_fill_err - fill0,
                  phy.n_align_err - align0, phy.n_gap_err - gap0, phy.n_s_lane_err - slane0, phy.n_dec_err - dec0,
                  phy.ipg_min, phy.ipg_sum, phy.ipg_n, phy.n_corrupt, phy.n_ins, phy.n_del, phy.n_lpi, phy.n_enc_err);
+        if (p == lpdown) begin
+            int tw;
+            phy.go = 1'b0;
+            phy.word = phy.word & 16'h7FFF;
+            phy.restart_req = 1'b1;
+            repeat (100) @(posedge clk);
+            tw = 0;
+            do begin @(posedge clk); tw++; end
+            while (!(an_cpl && phy.st == 6 && lp_word[15] == 1'b0) && tw < 3000000);
+            repeat (500) @(posedge clk);
+            $display("TB_LPDOWN p=%0d t=%0d an_cpl=%0d lp_word=0x%04x usx_ok=%0d link=%0d lock=%0d",
+                     p, tw, an_cpl, lp_word, usx_ok, link, lock);
+        end
         if (p == lockloss) begin
             int tl, tr;
             phy.go = 1'b0;

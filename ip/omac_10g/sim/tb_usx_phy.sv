@@ -366,10 +366,13 @@ task automatic push_frame();
         end
         ws.push_back(mk(c, d));
     end
-    // which copy to corrupt (a data word, not the first two or the last word)
+    // which copy to corrupt: a data word from word 3 on (not the /S/ and SFD words, not the
+    // first data word: with strict checking the next sample becomes an error, and a frame
+    // with 4 bytes or less before an error is dropped by any MAC, not delivered as bad),
+    // not the last word
     cw = -1; cr = 0; cb = 0;
-    if (rep >= 2 && nw > 4 && $urandom_range(99) < corrupt) begin
-        cw = $urandom_range(nw - 2, 2);
+    if (rep >= 2 && nw > 5 && $urandom_range(99) < corrupt) begin
+        cw = $urandom_range(nw - 2, 3);
         cr = $urandom_range(rep - 1, 1);
         cb = $urandom_range(31);
         n_corrupt++;
