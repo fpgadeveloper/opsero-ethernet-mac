@@ -368,7 +368,7 @@ initial begin
         while ((txq_a.size() > 0 || txq_b.size() > 0 || a_s_tvalid || b_s_tvalid) && n < maxc) begin
             @(posedge clk_a); n++;
         end
-        repeat (2000 + 40 * REPN) @(posedge clk_a);
+        repeat (2000 + 40 * (REPN - 1)) @(posedge clk_a);
         $display("TB_INJ dflip_ba=%0d", ch_ba.n_dflip);
     end else if (mode == "pause") begin
         // B keeps sending filler frames and honours PAUSE
