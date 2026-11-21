@@ -1,0 +1,8 @@
+# omac_mdio out-of-context jobs (name | top | generics | flow: lint|synth|route | period ns | part | extra)
+# clk gets the period (the AXI4-Lite clock).
+omac_mdio_lint          | omac_mdio |                           | lint  | 10.0 | xczu7ev-ffvc1156-2-e      |
+omac_mdio_zu7ev_100     | omac_mdio |                           | route | 10.0 | xczu7ev-ffvc1156-2-e      |
+omac_mdio_zu7ev_250     | omac_mdio | DIV_INIT=49               | route | 4.0  | xczu7ev-ffvc1156-2-e      |
+omac_mdio_od_zu7ev_250  | omac_mdio | DIV_INIT=49 OPEN_DRAIN=1  | route | 4.0  | xczu7ev-ffvc1156-2-e      |
+omac_mdio_vc1902_100    | omac_mdio |                           | route | 10.0 | xcvc1902-vsva2197-2MP-e-S |
+omac_mdio_vc1902_250    | omac_mdio | DIV_INIT=49               | route | 4.0  | xcvc1902-vsva2197-2MP-e-S |

@@ -43,6 +43,28 @@ Work in progress; merged to `main` and tagged after hardware validation.
   polarity and driver settings, QPLL / CDR lock status and the reference clock / 8
   (`refclk_mon`) for a frequency monitor. `omac_gen_gth` takes an optional list of extra
   gtwizard ports (default: none, the existing IPs are unchanged).
+- **omac_mdio**: MDIO master (IEEE 802.3 clause 22 read / write, clause 45 address / write /
+  read / post-read-increment-address) with AXI4-Lite registers, for the PHYs of any MAC (the
+  omac MACs and many vendor 10G+ MACs have no MDIO master). Programmable MDC divider (2.5 MHz
+  from 100 MHz after reset; `clk` / 2 to `clk` / 512), MDC held low or free-running between
+  frames, preamble 0-63 bits (32 after reset, 0 = suppressed), MDIO driven on the falling edge
+  and sampled at the rising edge at the pin (synchroniser latency compensated), one-command
+  clause 45 access (`ADDR_FIRST`: address frame + data frame back to back), no-answer flag
+  (`TA_ERR`, read returns 0xFFFF), readback check of every driven bit (`BUS_ERR`), level
+  interrupt, hold-off input and register bit (no command starts, for PHYs leaving reset),
+  abort with 64 released MDC cycles before the next frame, bit-bang mode, `OPEN_DRAIN`
+  parameter. `omac_mdio_bd.v` wrapper for IP integrator with `s_axil` (AXI4-Lite), `mdio`
+  (`xilinx.com:interface:mdio:1.0`, the block design wrapper makes the IOBUF) and `irq`
+  interfaces (`scripts/gen_bd_wrapper.py` now covers it). docs/omac_mdio.md.
+- **omac_mdio drivers** (the MAC cores stay driver-less): a Linux MDIO-bus platform driver
+  (`ip/omac_mdio/drivers/linux`, `GPL-2.0-only OR MIT`, compatible `opsero,omac-mdio`,
+  `mii_bus` with `read` / `write` / `read_c45` / `write_c45`, device-tree binding) and a
+  bare-metal C driver (`ip/omac_mdio/drivers/baremetal`, MIT, `Xil_In32` / `Xil_Out32` or any
+  accessor) with a host unit test against a register model.
+- **Verification:** omac_mdio regression tests `mdio`, `mdio_fast` (the core against three
+  behavioural PHYs on one bus at 100 MHz push-pull and 250 MHz open-drain) and `mdio_drv`
+  (bare-metal driver host test); the regression now has 34 tests. OOC jobs
+  `make synth-mdio` (xczu7ev, xcvc1902, 100 and 250 MHz).
 - **Verification:** regression tests `10g_ts` and `10g_ts25` (31 tests in all): every transmit
   timestamp against the position of its /S/ block in the wire capture decoded by the Python
   model (`omac_ref.parse_capture` now reports the line of each /S/), the start lane and the
@@ -59,6 +81,8 @@ Work in progress; merged to `main` and tagged after hardware validation.
   on hardware.
 - The hooks and the quad wrapper on hardware (the first design to use them: an Opsero
   SyncE + PTP reference design for the quad SFP28 FMC on a ZCU106).
+- omac_mdio on hardware; its Linux driver on a running kernel (compile-tested against AMD
+  linux-xlnx 6.12 for arm64 and mainline 6.17).
 
 ## v0.1.0 (2026-11-05)
 

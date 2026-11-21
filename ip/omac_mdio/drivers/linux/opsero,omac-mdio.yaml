@@ -1,0 +1,88 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR MIT)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/net/opsero,omac-mdio.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Opsero omac_mdio MDIO controller
+
+maintainers:
+  - Opsero Electronic Design Inc.
+
+description: |
+  The omac_mdio MDIO master of opsero-ethernet-mac: an AXI4-Lite peripheral in the FPGA
+  that sends IEEE 802.3 clause 22 and clause 45 management frames on one MDC/MDIO bus.
+  It is independent of any MAC: a MAC driver reaches its PHY on this bus through
+  "phy-handle". PHYs that need clause 45 management are described with the compatible
+  "ethernet-phy-ieee802.3-c45".
+
+allOf:
+  - $ref: mdio.yaml#
+
+properties:
+  compatible:
+    const: opsero,omac-mdio
+
+  reg:
+    maxItems: 1
+    description: the register window (at least 0x40 bytes, normally 0x1000)
+
+  clocks:
+    maxItems: 1
+    description: |
+      The AXI4-Lite clock of the core. Optional: with it the driver sets the MDC divider
+      for "clock-frequency"; without it the divider stays at the core's reset value
+      (parameter DIV_INIT, 2.5 MHz from a 100 MHz clock by default).
+
+  clock-frequency:
+    default: 2500000
+    description: MDC frequency in Hz (the highest MDC at or below this value is used).
+
+  suppress-preamble: true
+
+  interrupts:
+    maxItems: 1
+    description: |
+      Level-high "command done" interrupt (irq output of the core). Optional; the
+      driver polls.
+
+  opsero,mdc-free-running:
+    type: boolean
+    description: |
+      Keep MDC running between frames (for PHYs that need a continuous MDC). By default
+      MDC is held low between frames.
+
+  opsero,timeout-us:
+    default: 10000
+    description: |
+      How long the driver waits for one command (a clause 45 access at 2.5 MHz takes 52 us)
+      before it aborts it and returns -ETIMEDOUT. A design that holds the core off while its
+      PHYs leave reset (hold input) needs a timeout longer than that hold.
+
+required:
+  - compatible
+  - reg
+
+unevaluatedProperties: false
+
+examples:
+  - |
+    /* two clause 45 PHYs (addresses 1 and 5) on one bus, used by two MACs */
+    mdio@a0010000 {
+        compatible = "opsero,omac-mdio";
+        reg = <0xa0010000 0x1000>;
+        clocks = <&zynqmp_clk 71>;
+        clock-frequency = <2500000>;
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        phy0: ethernet-phy@1 {
+            compatible = "ethernet-phy-ieee802.3-c45";
+            reg = <1>;
+        };
+
+        phy1: ethernet-phy@5 {
+            compatible = "ethernet-phy-ieee802.3-c45";
+            reg = <5>;
+        };
+    };

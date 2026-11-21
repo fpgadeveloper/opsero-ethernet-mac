@@ -15,10 +15,13 @@ make sim-quick      # python3 -I sim/run_tests.py --quick  smaller workloads
 python3 -I sim/run_tests.py -k 10g                         # tests whose name contains "10g"
 python3 -I ip/omac_10g/sim/test_omac_10g.py pause10 --seed 3   # one omac_10g test, one seed
 python3 -I ip/omac_40g/sim/test_omac_40g.py perms rate          # omac_40g tests
+python3 -I ip/omac_mdio/sim/test_omac_mdio.py base fast         # omac_mdio, both configurations
+make drv-mdio                                                   # omac_mdio bare-metal driver host test
 ```
 
-The full regression takes about 16 minutes on one CPU core. It needs Vivado 2025.x (`xvlog`, `xelab`, `xsim` on the PATH, `VIVADO_SETTINGS` pointing at
-`settings64.sh`, or a usual install location) and Python 3 (standard library only). Build
+The full regression takes about 20 minutes on one CPU core. It needs Vivado 2025.x (`xvlog`, `xelab`, `xsim` on the PATH, `VIVADO_SETTINGS` pointing at
+`settings64.sh`, or a usual install location), Python 3 (standard library only) and, for
+`mdio_drv`, a host C compiler (`$CC` or `cc`). Build
 products go to `sim/build` (or `$SIM_BUILD`); each testbench is compiled once per configuration
 and again when a source changes. The full log of every omac_10g run is kept in
 `sim/build/omac_10g/<test>/xsim.log`.
@@ -83,6 +86,9 @@ each test takes about two minutes (Vivado 2025.2). Result (v0.2.0-dev), times af
 | `ip/omac_10g/sim/tb_omac_10g.sv` | two omac_10g back to back, clocks 100 ppm apart, each receiver on the far end's TX clock; TX drivers, RX monitors, wire capture, mode sequences |
 | `ip/omac_10g/sim/tb_gt_chan.sv` | bit-level channel + gearbox model: random 66-bit phase, slip with a 2-24 cycle latency, header / payload error injection (also one per omac_40g lane) |
 | `ip/omac_40g/sim/tb_omac_40g.sv` | two omac_40g back to back, four lanes each way: block delay per lane (skew), lane permutation, `tb_gt_chan` per lane, every receiver lane on its own recovered clock (the far end's TX clock with a random phase), A and B 100 ppm apart; capture of the four lanes as the receiver sees them |
+| `ip/omac_mdio/sim/tb_omac_mdio.sv` | omac_mdio and three PHY models on one bus (5 ns board delay each way, pull-up); AXI-Lite driver, register mirror, continuous MDC / setup-hold / contention / open-drain checks, the test phases |
+| `ip/omac_mdio/sim/tb_mdio_phy.sv` | behavioural MDIO slave written from clauses 22.2.4.5 and 45.3: preamble / start detection with a minimum preamble per PHY, clause 22 and clause 45 frames (per-MMD address register, post-read-increment), skips other addresses and unsupported clauses, write turnaround check, read data driven 0-300 ns after the rising MDC edge |
+| `ip/omac_mdio/drivers/baremetal/test/test_omac_mdio_drv.c` | the bare-metal driver against a register model of the core (host C) |
 | `ip/omac_40g/sim/tb_40g_units.sv` | 40GBASE-R units: hand-computed marker / BIP vectors, pcs_tx marker insertion and stall, lane receivers (AM lock, lane number, BIP errors, marker loss), CRC-32 identities of the 256-bit MAC |
 
 ## Tests
@@ -116,12 +122,15 @@ each test takes about two minutes (Vivado 2025.2). Result (v0.2.0-dev), times af
 | `40g_fault` | `test_omac_40g.py fault` | Local Fault -> Remote Fault, Remote Fault -> idles, recovery |
 | `40g_rate` | `test_omac_40g.py rate` | 10,000 x 64-byte and 1,000 x 9,600-byte frames back to back: cycles vs line rate less markers, all received |
 | `40g_watchdog` | `test_omac_40g.py watchdog` | no alignment -> `gt_rx_reset_req` |
+| `mdio`, `mdio_fast` | `test_omac_mdio.py base / fast` | omac_mdio at 100 MHz (push-pull, 2 synchroniser stages, `DIV_INIT` 19) and at 250 MHz (`OPEN_DRAIN` = 1, 3 stages, `DIV_INIT` 49), PHYs at 1 (clause 22 + 45, full preamble required), 5 (clause 22 + 45, preamble suppression) and 9 (clause 22 only), nobody at 7: reset values; clause 22 reads of the ID registers and 60 random write / read pairs; reads of absent PHYs and clause 45 to the clause-22-only PHY (`TA_ERR`, 0xFFFF, no PHY answers); clause 45 address / write / read on MMDs 1, 3, 7, 30, 31, per-MMD address registers, 240 `ADDR_FIRST` commands, post-read-increment over 9 registers and its 0xFFFF wrap; every write found in the PHY models' register files; exact MDC cycles per frame (65, 130) and busy time; back-to-back commands; `DIV` 1-255 (MDC 25 MHz to 195 kHz) with the PHY output delay scaled to the period; `PRE_LEN` 0 / 8 / 32 (ones seen by the PHY, the strict PHY ignores suppressed frames); free-running MDC (edges counted while idle, stops low); hold-off by input and by register (no MDC edge while held, abort while held = no bus activity, hold rising inside a frame and inside an `ADDR_FIRST` command); 12 aborts at random bits, each followed by 64 released MDC cycles + a correct frame; a clause 22 read done entirely in bit-bang mode; interrupt; `CMD` while busy; `BUS_ERR` with MDIO shorted low; AXI address before data, byte strobes; 300 random commands. Continuously: MDC high time = (`DIV` + 1) cycles, low time >= that (= in free-running mode), MDIO setup and hold >= 10 ns at the PHY, no two drivers on the bus, MDIO released after every command, no driven 1 with `OPEN_DRAIN`. Six RTL mutations were each caught (not part of the regression) |
+| `mdio_drv` | `test_omac_mdio_drv.py` | the bare-metal driver (`omac_mdio.c`) compiled with `-Wall -Wextra -Wpedantic -Werror` against a register model: divider rounding (100 / 99.999 / 250 / 300 MHz, clamp), init (ID check, divider kept with `clk_hz` 0), configuration bits, clause 22 and 45 commands as encoded in `CMD` / `WDATA`, no-answer reads, argument checks, post-read-increment blocks, timeout -> abort |
 
 ## Results
 
-Full regression (`make sim`), 2026-11-05, Vivado 2025.2 xsim, v0.2.0-dev (omac_10g with the
-timestamp hooks): **PASS, 31 tests, 0 failed, 19 min** (the 29 tests of v0.1.0 unchanged, plus
-`10g_ts` and `10g_ts25`). v0.1.0 (2026-11-03): PASS, 29 tests, 16 min. The omac_10g rows below are
+Full regression (`make sim`), 2026-11-21, Vivado 2025.2 xsim, v0.2.0-dev with omac_mdio:
+**PASS, 34 tests, 0 failed, 21 min** (the 31 tests below plus `mdio`, `mdio_fast` and
+`mdio_drv`). 2026-11-05 (omac_10g with the timestamp hooks): PASS, 31 tests, 19 min (the 29
+tests of v0.1.0 unchanged, plus `10g_ts` and `10g_ts25`). v0.1.0 (2026-11-03): PASS, 29 tests, 16 min. The omac_10g rows below are
 from the first omac_10g run (counts unchanged since).
 
 | Test | Result | Time (s) | Measured along the way |
@@ -157,3 +166,6 @@ from the first omac_10g run (counts unchanged since).
 | `40g_fault` | PASS | 24 | LF -> RF (0x4B), RF -> idles, recovery |
 | `40g_rate` | PASS | 175 | 10,000 x 64 B in 26,247 cycles, 1,000 x 9,600 B in 300,342 cycles (line rate less markers), all received, 0 overflows, gaps mean 11.9996 |
 | `40g_watchdog` | PASS | 34 | 3 reset requests in 3 periods, none at the aligned side |
+| `mdio` | PASS | 11 | 934 commands, 521 reads checked against the mirror, 32 no-answer reads (`TA_ERR`, 0xFFFF); PHY 1 / 5 / 9 decoded 530 / 504 / 182 frames; 65 MDC cycles = 2602 cycles (26.0 us) per frame, 130 per `ADDR_FIRST` access (52.0 us); `DIV` 1-255 = 25 MHz to 195 kHz; `PRE_LEN` 0: 33 MDC cycles, PHY 5 saw 1 one, PHY 1 ignored it; free-running: 50 edges in 20 us; 12 aborts + resync (64 + 65 MDC cycles) correct; bit-bang read = the register value; 0 contention, 0 MDC timing errors, min setup / hold at the PHY 20.0 / 20.0 ns |
+| `mdio_fast` | PASS | 20 | 929 commands, 515 reads checked, 33 no-answer reads; 250 MHz, `DIV` 49 = 2.5 MHz, `DIV` 2-255; open-drain never drove a 1; 0 contention; min setup / hold 12.0 / 12.0 ns (at `DIV` 2) |
+| `mdio_drv` | PASS | 0 | 45 checks, 0 failed |

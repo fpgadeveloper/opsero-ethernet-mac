@@ -10,7 +10,7 @@
 # jobs.txt, one job per line ('#' = comment), fields separated by '|':
 #   name | top | generics (K=V ...) | flow: lint | synth | route | period ns | part | extra ("gt" | "gtquad")
 # Clocks: clk and every gt_rx_clk (omac_10g: one, omac_40g: four) get the period and are
-# asynchronous to each other.
+# asynchronous to each other (omac_mdio: clk only).
 # "gt" jobs generate the GTH gtwizard IP with gt/omac_gt_usp_gth/gen_gt.tcl (omac_10g: one
 # example channel X0Y14; omac_40g: four example channels of one xczu7ev quad,
 # X0Y14 X0Y13 X0Y15 X0Y12) and
@@ -101,6 +101,8 @@ foreach line $lines {
         puts $fh "create_clock -period 10.0 -name freerun \[get_ports freerun_clk\]"
         # four independent lanes: the free-running clock only meets the GT clocks in synchronisers
         if {$extra eq "gtquad"} { puts $fh "set_clock_groups -asynchronous -group \[get_clocks freerun\]" }
+    } elseif {$ipn eq "omac_mdio"} {
+        puts $fh "create_clock -period $per -name clk \[get_ports clk\]"
     } elseif {$ipn eq "omac_40g"} {
         puts $fh "create_clock -period $per -name clk \[get_ports clk\]"
         set grp "-group clk"

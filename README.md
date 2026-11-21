@@ -30,6 +30,10 @@ Opsero's reference designs; the designs that use it are listed in
 | [`gt/omac_gt_usp_gth`](docs/gt_usp_gth.md) | UltraScale+ GTH, 64B/66B asynchronous gearbox (gtwizard_ultrascale, free); one lane (`omac_gt_usp_gth`), four (`omac_gt_usp_gth_x4`, per-lane RX clocks), or four independent omac_10g lanes of one quad (`omac_gt_usp_gth_quad`, v0.2.0-dev, per-lane RX reset) | **hardware-proven** with both IPs (ZCU106; `BIT_REVERSE` = 1 confirmed); `_quad`: synthesised, not yet on hardware |
 | [`gt/omac_gt_usp_gty`](docs/gt_usp_gth.md#gty-omac_gt_usp_gty_quad) | UltraScale+ GTY, the same gtwizard settings: one to four independent omac_10g lanes of one quad (`omac_gt_usp_gty_quad`, v0.2.0-dev; `omac_gt_usp_gth_quad` takes the same lane count) | simulated with the transceiver models, routed out of context; not yet on hardware |
 
+| Management IP | Function | Maturity |
+|---|---|---|
+| [`omac_mdio`](docs/omac_mdio.md) | MDIO master, IEEE 802.3 clause 22 and clause 45, AXI4-Lite registers, for the PHYs of any MAC; Linux MDIO-bus driver (`ip/omac_mdio/drivers/linux`) and bare-metal driver (`ip/omac_mdio/drivers/baremetal`) included | v0.2.0-dev: simulated against behavioural PHY models, implemented on UltraScale+ and Versal at 100 / 250 MHz, drivers compile-tested; not yet on hardware |
+
 The interface every IP implements is defined in [docs/interface.md](docs/interface.md). Hardware
 validation details: [docs/hardware.md](docs/hardware.md); planned work: [docs/roadmap.md](docs/roadmap.md).
 
@@ -55,7 +59,7 @@ omac_gen_gth ./ip <channel-site> 100        ;# the board's GT channel, for examp
 read_verilog -sv $omac/gt/omac_gt_usp_gth/omac_gt_usp_gth.sv
 ```
 
-The cores are driver-less by design: a design folds the MAC's static control and status ports
+The MAC cores are driver-less by design: a design folds the MAC's static control and status ports
 into its own register block, as described in the
 [software contract](docs/interface.md#6-software-contract) (what to expose, bring-up, counters,
 interrupts, a worked example).
@@ -82,6 +86,7 @@ locally):
 | [docs/omac_10g.md](docs/omac_10g.md) | omac_10g: architecture, bring-up and software (sequence, link-up time, link loss, loopback, PAUSE, debug order), parameters, timing and constraints, verification |
 | [docs/omac_40g.md](docs/omac_40g.md) | omac_40g: architecture, throughput and its known limit, lane order and skew, board placement, bring-up and software (sequence, link-up time, link loss, loopback, PAUSE, debug order), parameters, timing |
 | [docs/gt_usp_gth.md](docs/gt_usp_gth.md) | GTH wrappers (one and four lanes): generator scripts, global synthesis, clock constraints, resets and handshake (software view), gtwizard settings, bit order, RX clocking, board placement (what a design determines for its board) |
+| [docs/omac_mdio.md](docs/omac_mdio.md) | omac_mdio: MDIO master (clause 22 / 45), register map, frames and timing, hold-off, abort, bit-bang, block design integration, level translators, Linux driver + device tree, bare-metal driver |
 | [docs/common.md](docs/common.md) | the shared building blocks and the AXI-Lite statistics register map |
 | [docs/simulation.md](docs/simulation.md) | the simulation regression, the interop vectors, the results |
 | [docs/resources.md](docs/resources.md) | out-of-context resources and timing per IP, part and clock |
@@ -95,7 +100,8 @@ locally):
 ```
 ip/<ip>/rtl     the IP (SystemVerilog; <ip>.f = compile order; <ip>_bd.v = IPI wrapper)
 ip/<ip>/sim     the IP's testbenches and test drivers
-ip/<ip>/synth   out-of-context synthesis job lists and synthesis-only tops (make synth / synth40)
+ip/<ip>/synth   out-of-context synthesis job lists and synthesis-only tops (make synth / synth40 / synth-mdio)
+ip/omac_mdio/drivers   the MDIO master's Linux MDIO-bus driver and bare-metal driver
 common/         shared blocks: CRC-32, 64B/66B codec + scrambler, block lock, BER monitor,
                 RS link fault, PAUSE, clock crossing, AXI-Lite statistics
 gt/             transceiver wrappers per family (gtwizard generator scripts + wrapper RTL)
@@ -106,8 +112,8 @@ scripts/        helper scripts (IPI wrapper generator, out-of-context synthesis 
 
 ## Tools
 
-Simulation: Vivado 2025.x xsim (`make sim`, about 16 minutes) and Python 3 (standard library
-only). Synthesis: Vivado 2025.x (`make synth`, `make synth40`). Both scripts find Vivado on `PATH`, through
+Simulation: Vivado 2025.x xsim (`make sim`, about 20 minutes), Python 3 (standard library
+only) and a host C compiler (the omac_mdio bare-metal driver test). Synthesis: Vivado 2025.x (`make synth`, `make synth40`). Both scripts find Vivado on `PATH`, through
 `VIVADO_SETTINGS`, or in the usual install locations. Documentation: Sphinx with myst-parser and
 sphinx-rtd-theme (`make docs`, `pip install -r docs/requirements.txt`).
 
