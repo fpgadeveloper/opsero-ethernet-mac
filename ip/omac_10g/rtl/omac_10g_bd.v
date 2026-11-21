@@ -24,7 +24,14 @@ module omac_10g_bd #(
     parameter LOOPBACK_MODE = 3'b010,
     parameter SCR_INIT = {58{1'b1}},
     parameter TS_EN = 1'b0,
-    parameter TS_W = 32
+    parameter TS_W = 32,
+    parameter USXGMII_EN = 1'b0,
+    parameter USX_LINK_TIMER = 250000,
+    parameter USX_SOP_FILL = 8'hAA,
+    parameter USX_AN_OPCODE = 8'h03,
+    parameter USX_AN_LSWAP = 1'b0,
+    parameter USX_AN_TXFMT = 1'b0,
+    parameter USX_IDLE_RESTART = 1'b1
 ) (
     (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 clk CLK" *)
     (* X_INTERFACE_PARAMETER = "ASSOCIATED_BUSIF s_axis_tx:m_axis_rx, ASSOCIATED_RESET rst" *)
@@ -120,7 +127,14 @@ omac_10g #(
         .LOOPBACK_MODE(LOOPBACK_MODE),
         .SCR_INIT(SCR_INIT),
         .TS_EN(TS_EN),
-        .TS_W(TS_W)
+        .TS_W(TS_W),
+        .USXGMII_EN(USXGMII_EN),
+        .USX_LINK_TIMER(USX_LINK_TIMER),
+        .USX_SOP_FILL(USX_SOP_FILL),
+        .USX_AN_OPCODE(USX_AN_OPCODE),
+        .USX_AN_LSWAP(USX_AN_LSWAP),
+        .USX_AN_TXFMT(USX_AN_TXFMT),
+        .USX_IDLE_RESTART(USX_IDLE_RESTART)
 ) u_omac_10g (
         .clk(clk),
         .rst(rst),

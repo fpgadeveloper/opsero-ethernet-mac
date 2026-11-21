@@ -28,6 +28,16 @@
 //       show a timestamp.
 // TS_EN = 0 (default): the outputs are 0 and no logic is added.
 //
+// USXGMII (USXGMII_EN = 1, SPEED 10 only; docs/usxgmii.md): the same lane
+// carries 10M/100M/1G/2.5G/5G/10G to a multi-rate PHY. Transmit: the MAC runs
+// with a clock enable of 1 in rep_n cycles and omac_10g_usx_tx replicates each
+// 32-bit word rep_n times; receive: omac_10g_usx_rx keeps one word in rep_n,
+// phase-aligned on every /S/; omac_10g_usx_an exchanges the configuration word
+// with the PHY (clause 37 style) and sets rep_n. Status / control: ctl_usx_*,
+// stat_usx_*, ev_usx_* (optional AXI-Lite block omac_10g_usx_axil).
+// USXGMII_EN = 0 (default): those outputs are 0, the inputs are ignored and the
+// IP is the plain 10GBASE-R MAC + PCS.
+//
 // Copyright (c) 2026 Opsero Electronic Design Inc.
 
 `resetall
@@ -49,7 +59,14 @@ module omac_10g #(
     parameter logic [2:0]  LOOPBACK_MODE  = 3'b010,    // GT near-end PMA loopback
     parameter logic [57:0] SCR_INIT       = '1,
     parameter bit          TS_EN          = 1'b0,      // timestamp hooks
-    parameter int          TS_W           = 32         // width of the time values (TS_EN = 1)
+    parameter int          TS_W           = 32,        // width of the time values (TS_EN = 1)
+    parameter bit          USXGMII_EN     = 1'b0,      // USXGMII rate adaptation + auto-negotiation
+    parameter int          USX_LINK_TIMER = 250000,    // AN link timer, clk cycles (1.6 ms at 156.25 MHz)
+    parameter logic [7:0]  USX_SOP_FILL   = 8'hAA,     // lane 0 of the copies of a replicated /S/ word
+    parameter logic [7:0]  USX_AN_OPCODE  = 8'h03,     // lane 3 of the AN ordered set
+    parameter bit          USX_AN_LSWAP   = 1'b0,      // 1: config word bits 7:0 in lane 1, 15:8 in lane 2
+    parameter bit          USX_AN_TXFMT   = 1'b0,      // AN ordered set: 0 in both halves, 1 low half + idles
+    parameter bit          USX_IDLE_RESTART = 1'b1     // idles received while AN waits for words restart it
 ) (
     input  wire logic        clk,
     input  wire logic        rst,
@@ -127,7 +144,23 @@ module omac_10g #(
     output logic             tx_ts_user,
     input  wire logic [TS_W-1:0] rx_ts_in,         // gt_rx_clk: the same time in the receive clock
     output logic      [TS_W-1:0] m_axis_rx_ts,     // clk: with every beat of m_axis_rx
-    output logic             m_axis_rx_ts_lane4
+    output logic             m_axis_rx_ts_lane4,
+
+    // USXGMII (USXGMII_EN = 1; inputs ignored, outputs 0 otherwise); all in clk
+    input  wire logic        ctl_usx_an_enable,    // 1: auto-negotiation; 0: forced ctl_usx_speed
+    input  wire logic        ctl_usx_an_restart,   // rising edge restarts auto-negotiation
+    input  wire logic [15:0] ctl_usx_an_adv,       // our word (bit 14 is set by the arbitration)
+    input  wire logic [2:0]  ctl_usx_speed,        // forced speed code (AN off)
+    input  wire logic [19:0] ctl_usx_link_timer,   // AN link timer in clk cycles, 0 = USX_LINK_TIMER
+    input  wire logic        ctl_usx_rx_strict,    // 1: a replica mismatch makes the frame bad
+    output wire logic        stat_usx_an_complete,
+    output wire logic [2:0]  stat_usx_an_state,
+    output wire logic [15:0] stat_usx_lp_word,     // the PHY's acknowledged word
+    output wire logic [2:0]  stat_usx_speed,       // speed code in use (as word bits 11:9)
+    output wire logic        stat_usx_link_ok,     // AN complete + PHY link (or AN off)
+    output wire logic        ev_usx_an_start,
+    output wire logic        ev_usx_an_done,
+    output wire logic        ev_usx_rep_error
 );
 
 import omac_pkg::*;
@@ -136,6 +169,7 @@ initial begin
     if (DATA_WIDTH != 64) $fatal(1, "omac_10g: DATA_WIDTH must be 64");
     if (SPEED != 10 && SPEED != 25) $fatal(1, "omac_10g: SPEED must be 10 or 25");
     if (TS_EN && TS_W < 1) $fatal(1, "omac_10g: TS_W must be >= 1");
+    if (USXGMII_EN && SPEED != 10) $fatal(1, "omac_10g: USXGMII needs SPEED 10");
 end
 
 // timestamp width inside (1 constant-0 bit when the hooks are off)
@@ -188,8 +222,30 @@ logic        r_ev_good, r_ev_bad, r_ev_fcs, r_ev_runt, r_ev_over;
 logic [TSI-1:0] r_ts;
 logic        r_ts_l4;
 
+// USXGMII: one word in rep_n to the MAC (plain 10GBASE-R: the PCS columns)
+logic        d_xv;
+logic [63:0] d_xd;
+logic [7:0]  d_xc;
+logic [TSI-1:0] d_xts;
+logic        r_rep_err;
+logic [9:0]  usx_rep_rx;
+if (USXGMII_EN) begin : g_usx_rx
+    logic strict_r;
+    omac_sync_bit u_sync_strict (.clk(gt_rx_clk), .din(ctl_usx_rx_strict), .dout(strict_r));
+    omac_10g_usx_rx #(.TS_W(TSI)) u_usx_rx (
+        .clk(gt_rx_clk), .rst(rx_rst), .rep_n(usx_rep_rx), .strict(strict_r),
+        .xvalid(r_xv), .xd(r_xd), .xc(r_xc), .xts(r_xts),
+        .ovalid(d_xv), .od(d_xd), .oc(d_xc), .ots(d_xts), .ev_rep_err(r_rep_err));
+end else begin : g_rx_plain
+    assign d_xv = r_xv;
+    assign d_xd = r_xd;
+    assign d_xc = r_xc;
+    assign d_xts = r_xts;
+    assign r_rep_err = 1'b0;
+end
+
 omac_10g_mac_rx #(.MIN_FRAME(MIN_FRAME), .MAX_FRAME(MAX_FRAME), .TS_W(TSI)) u_mac_rx (
-    .clk(gt_rx_clk), .rst(rx_rst), .xvalid(r_xv), .xd(r_xd), .xc(r_xc), .xts(r_xts),
+    .clk(gt_rx_clk), .rst(rx_rst), .xvalid(d_xv), .xd(d_xd), .xc(d_xc), .xts(d_xts),
     .rx_enable(rx_enable_r), .mac_addr(ctl_mac_addr),
     .m_tvalid(r_tvalid), .m_tdata(r_tdata), .m_tkeep(r_tkeep), .m_tlast(r_tlast), .m_tuser(r_tuser),
     .m_ts(r_ts), .m_ts_lane4(r_ts_l4),
@@ -246,9 +302,10 @@ assign stat_hi_ber       = s_hiber;
 assign stat_local_fault  = (s_fault == 2'd1) || !rx_ready_s;
 assign stat_remote_fault = (s_fault == 2'd2);
 
+logic usx_link_ok;
 always_ff @(posedge clk) begin
     stat_link_up <= stat_block_lock && !stat_hi_ber && !stat_local_fault && !stat_remote_fault &&
-                    tx_ready_s;
+                    tx_ready_s && usx_link_ok;
 end
 
 // received PAUSE (rx clock -> clk): toggle + quanta held stable (PAUSE frames
@@ -276,8 +333,9 @@ end
 
 // ======================= PAUSE timers (clk) =======================
 logic pq_req, pq_xon, pq_ack;
+logic tx_ce;
 omac_pause #(.BIT_TIMES_PER_CLK(64)) u_pause (
-    .clk(clk), .rst(tx_rst),
+    .clk(clk), .rst(tx_rst), .ce(tx_ce),
     .rx_load(p_load), .rx_quanta(stat_rx_pause_quanta), .rx_pause_req(stat_rx_pause_req),
     .tx_send(PAUSE_EN && ctl_tx_pause_send), .tx_refresh(ctl_tx_pause_refresh),
     .tx_req(pq_req), .tx_req_xon(pq_xon), .tx_ack(pq_ack), .tx_xoff_active(stat_tx_pause_active));
@@ -287,7 +345,7 @@ logic [63:0] m_xd;
 logic [7:0]  m_xc;
 logic        m_sof, m_sof_l4, m_sof_usr;
 omac_10g_mac_tx #(.TX_PAD(TX_PAD), .PAUSE_EN(PAUSE_EN)) u_mac_tx (
-    .clk(clk), .rst(tx_rst),
+    .clk(clk), .rst(tx_rst), .ce(tx_ce),
     .s_tdata(s_axis_tx_tdata), .s_tkeep(s_axis_tx_tkeep), .s_tvalid(s_axis_tx_tvalid),
     .s_tready(s_axis_tx_tready), .s_tlast(s_axis_tx_tlast), .s_tuser(s_axis_tx_tuser[0]),
     .tx_enable(ctl_tx_enable), .hold(ctl_pause_tx_honour && stat_rx_pause_req),
@@ -302,34 +360,101 @@ localparam logic [63:0] RF_D   = {RF_CODE, 16'h0000, XG_SEQ, RF_CODE, 16'h0000, 
 localparam logic [63:0] IDLE_D = {8{XG_IDLE}};
 logic [63:0] t_xd = IDLE_D;
 logic [7:0]  t_xc = 8'hFF;
-always_ff @(posedge clk) begin
-    if (ctl_tx_fault) begin
-        t_xd <= LF_D;   t_xc <= 8'h11;
-    end else if (stat_local_fault) begin
-        t_xd <= RF_D;   t_xc <= 8'h11;
-    end else if (stat_remote_fault) begin
-        t_xd <= IDLE_D; t_xc <= 8'hFF;
-    end else begin
-        t_xd <= m_xd;   t_xc <= m_xc;
+logic        ts_sof, ts_l4, ts_usr;     // start of frame aligned with the input of the RS register
+
+if (USXGMII_EN) begin : g_usx_tx
+    // rate adaptation, then the RS with the auto-negotiation columns:
+    // Local Fault (ctl_tx_fault) > Remote Fault (local fault) > AN configuration
+    // > idles (AN idle phase, received Remote Fault, or waiting for a frame
+    // boundary after AN) > the replicated MAC columns
+    logic [63:0] u_xd;
+    logic [7:0]  u_xc;
+    logic [1:0]  xmit;
+    logic [63:0] cfg_d;
+    logic [7:0]  cfg_c;
+    logic [9:0]  rep_n;
+    logic        link_ok, data_ok = 1'b0;
+    omac_10g_usx_tx #(.SOP_FILL(USX_SOP_FILL)) u_usx_tx (
+        .clk(clk), .rst(tx_rst), .rep_n(rep_n), .ce(tx_ce),
+        .xd(m_xd), .xc(m_xc), .sof(m_sof), .sof_l4(m_sof_l4), .sof_user(m_sof_usr),
+        .od(u_xd), .oc(u_xc), .osof(ts_sof), .osof_l4(ts_l4), .osof_user(ts_usr));
+    omac_10g_usx_an #(.LINK_TIMER(USX_LINK_TIMER), .OPCODE(USX_AN_OPCODE), .LSWAP(USX_AN_LSWAP),
+                      .TXFMT(USX_AN_TXFMT), .IDLE_RESTART(USX_IDLE_RESTART)) u_usx_an (
+        .clk(clk), .rst(tx_rst), .rx_up(stat_block_lock), .an_enable(ctl_usx_an_enable),
+        .an_restart(ctl_usx_an_restart), .adv(ctl_usx_an_adv), .force_speed(ctl_usx_speed),
+        .link_timer(ctl_usx_link_timer), .xmit(xmit), .cfg_d(cfg_d), .cfg_c(cfg_c), .rep_n(rep_n),
+        .link_ok(link_ok), .an_complete(stat_usx_an_complete), .state(stat_usx_an_state),
+        .lp_word(stat_usx_lp_word), .speed(stat_usx_speed), .ev_start(ev_usx_an_start),
+        .ev_done(ev_usx_an_done),
+        .rx_clk(gt_rx_clk), .rx_rst(rx_rst), .rx_valid(r_xv), .rx_d(r_xd), .rx_c(r_xc),
+        .rx_rep_n(usx_rep_rx));
+    assign usx_link_ok      = link_ok;
+    assign stat_usx_link_ok = link_ok;
+    always_ff @(posedge clk) begin
+        if (xmit != 2'd2) data_ok <= 1'b0;
+        else if (u_xc == 8'hFF && u_xd == IDLE_D) data_ok <= 1'b1;
+        if (ctl_tx_fault) begin
+            t_xd <= LF_D;   t_xc <= 8'h11;
+        end else if (stat_local_fault) begin
+            t_xd <= RF_D;   t_xc <= 8'h11;
+        end else if (xmit == 2'd0) begin
+            t_xd <= cfg_d;  t_xc <= cfg_c;
+        end else if (xmit == 2'd1 || stat_remote_fault || !data_ok) begin
+            t_xd <= IDLE_D; t_xc <= 8'hFF;
+        end else begin
+            t_xd <= u_xd;   t_xc <= u_xc;
+        end
+        gt_loopback <= ctl_loopback ? LOOPBACK_MODE : 3'b000;
+        if (tx_rst) data_ok <= 1'b0;
     end
-    gt_loopback <= ctl_loopback ? LOOPBACK_MODE : 3'b000;
+    // replica mismatches (receive clock) into clk
+    omac_cdc_event #(.N(1)) u_cdc_rep (.s_clk(gt_rx_clk), .s_ev(r_rep_err), .m_clk(clk), .m_rst(tx_rst),
+                                       .m_ev(ev_usx_rep_error));
+end else begin : g_rs
+    assign tx_ce  = 1'b1;
+    assign ts_sof = m_sof;
+    assign ts_l4  = m_sof_l4;
+    assign ts_usr = m_sof_usr;
+    assign usx_rep_rx  = 10'd1;
+    assign usx_link_ok = 1'b1;
+    assign stat_usx_an_complete = 1'b0;
+    assign stat_usx_an_state    = '0;
+    assign stat_usx_lp_word     = '0;
+    assign stat_usx_speed       = '0;
+    assign stat_usx_link_ok     = 1'b0;
+    assign ev_usx_an_start      = 1'b0;
+    assign ev_usx_an_done       = 1'b0;
+    assign ev_usx_rep_error     = 1'b0;
+    always_ff @(posedge clk) begin
+        if (ctl_tx_fault) begin
+            t_xd <= LF_D;   t_xc <= 8'h11;
+        end else if (stat_local_fault) begin
+            t_xd <= RF_D;   t_xc <= 8'h11;
+        end else if (stat_remote_fault) begin
+            t_xd <= IDLE_D; t_xc <= 8'hFF;
+        end else begin
+            t_xd <= m_xd;   t_xc <= m_xc;
+        end
+        gt_loopback <= ctl_loopback ? LOOPBACK_MODE : 3'b000;
+    end
 end
 
 omac_10g_pcs_tx #(.SCR_INIT(SCR_INIT)) u_pcs_tx (
     .clk(clk), .rst(tx_rst), .xd(t_xd), .xc(t_xc), .gt_tx_hdr(gt_tx_hdr), .gt_tx_data(gt_tx_data));
 
-// TX timestamp: the /S/ column leaves mac_tx on m_xd, then the RS register
-// (t_xd), the encoder register (blk) and the scrambler register (gt_tx_data):
-// sof delayed by three cycles is high while the /S/ block is on gt_tx_data.
+// TX timestamp: the /S/ column leaves mac_tx on m_xd (USXGMII: the first copy
+// of the /S/ word leaves omac_10g_usx_tx on u_xd), then the RS register (t_xd),
+// the encoder register (blk) and the scrambler register (gt_tx_data): the start
+// flag delayed by three cycles is high while the /S/ block is on gt_tx_data.
 // The pulse also comes while the RS replaces frames by fault columns or idles
 // (the frame is then discarded), so the user's per-frame bookkeeping never
 // slips.
 if (TS_EN) begin : g_tx_ts
     logic [2:0] sof_d = '0, l4_d = '0, usr_d = '0;
     always_ff @(posedge clk) begin
-        sof_d <= {sof_d[1:0], m_sof};
-        l4_d  <= {l4_d[1:0], m_sof_l4};
-        usr_d <= {usr_d[1:0], m_sof_usr};
+        sof_d <= {sof_d[1:0], ts_sof};
+        l4_d  <= {l4_d[1:0], ts_l4};
+        usr_d <= {usr_d[1:0], ts_usr};
         tx_ts_valid <= sof_d[2];
         if (sof_d[2]) begin
             tx_ts_val   <= tx_ts_in;

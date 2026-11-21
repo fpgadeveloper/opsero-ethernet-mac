@@ -7,6 +7,7 @@ common/omac_descrambler.sv
 common/omac_sync_bit.sv
 common/omac_sync_reset.sv
 common/omac_cdc_event.sv
+common/omac_cdc_word.sv
 common/omac_async_fifo.sv
 common/omac_block_lock.sv
 common/omac_ber_mon.sv
@@ -17,4 +18,9 @@ ip/omac_10g/rtl/omac_10g_pcs_tx.sv
 ip/omac_10g/rtl/omac_10g_pcs_rx.sv
 ip/omac_10g/rtl/omac_10g_mac_tx.sv
 ip/omac_10g/rtl/omac_10g_mac_rx.sv
+ip/omac_10g/rtl/omac_10g_usx_tx.sv
+ip/omac_10g/rtl/omac_10g_usx_rx.sv
+ip/omac_10g/rtl/omac_10g_usx_an.sv
 ip/omac_10g/rtl/omac_10g.sv
+# optional AXI4-Lite register block for the USXGMII controls (not instantiated by omac_10g)
+ip/omac_10g/rtl/omac_10g_usx_axil.sv
