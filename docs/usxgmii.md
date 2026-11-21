@@ -130,7 +130,7 @@ A `phylink_pcs` for `PHY_INTERFACE_MODE_USXGMII` (the MAC itself stays the desig
 | interrupt | IRQ_EN = LINK_DOWN \| LINK_UP \| AN_DONE; the handler clears EVENTS and calls `phylink_pcs_change()` |
 | statistics | REP_ERRORS (and the MAC's own counters) |
 
-The PHY driver (for example `marvell10g` for some multi-rate PHYs) selects the PHY's USXGMII
+The PHY's own Linux driver selects the PHY's USXGMII
 host mode and in-band auto-negotiation; the PCS above then follows the PHY's copper speed.
 
 ## Transmit
