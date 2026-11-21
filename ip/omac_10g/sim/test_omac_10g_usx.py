@@ -117,8 +117,11 @@ def check_run(ck, out, d, speeds, fa_all, fb_all, an, exp_rep=None, strict=None)
     ta = read_cols(os.path.join(d, 'ta.txt'))
     pr = read_cols(os.path.join(d, 'pr.txt'))
     ps = read_cols(os.path.join(d, 'ps.txt'))
-    ia = ib = 0
+    ia = ib = ibt = 0
     for p, (code, h, e) in enumerate(zip(speeds, ph, pe)):
+        fill = pr[ib:ib + e.get('skip_rx', 0)]      # frames sent while AN changed the speed (busy)
+        ib += e.get('skip_rx', 0)
+        ibt += e.get('skip_tx', 0)
         nm = NAME[code]
         ck(h['link'] == 1 and h['dut_speed'] == code, '%s: link, DUT speed code %d (%d cycles to link)'
            % (nm, h['dut_speed'], h['t']))
@@ -150,8 +153,9 @@ def check_run(ck, out, d, speeds, fa_all, fb_all, an, exp_rep=None, strict=None)
            '(%d lane-4 starts), constant on every beat' % (nm, dts[:4], CH_LAT, sum(1 for s in sent if s[1] == 4)))
         # DUT -> PHY
         got = pr[ib:ib + len(fa)]
-        tts = [t for t in ta if t[2] == 1][ib:ib + len(fa)]
+        tts = [t for t in ta if t[2] == 1][ibt:ibt + len(fa)]
         ib += len(fa)
+        ibt += len(fa)
         bad = 0
         for i, (f, g) in enumerate(zip(fa, got)):
             eb = 'abort' in f or 'under' in f
@@ -168,6 +172,12 @@ def check_run(ck, out, d, speeds, fa_all, fb_all, an, exp_rep=None, strict=None)
         ck(tdiff == [0] and all(t[1] == (g[2] == 4) for t, g in zip(tts, got)),
            '%s DUT->PHY timestamps: TX ts = cycle of the /S/ block on gt_tx_data (%d frames, diff %s), lane4 = '
            '/S/ lane' % (nm, len(tts), tdiff[:4]))
+        if e.get('skip_tx'):
+            ck(e['skip_rx'] > 0 and all(g[0] == 1 and bytes.fromhex(g[3]) == bytes(range(200)) for g in fill),
+               '%s: %d frames offered while AN changed the speed, the last %d arrived complete and exact'
+               % (nm, e['skip_tx'], e['skip_rx']))
+        ck(e['orphan'] == 0, '%s: no data outside a frame at the PHY (MAC data passed from a frame boundary after AN)'
+           % nm)
         ck(e['phy_viol'] == 0 and e['phy_fill'] == 0 and e['phy_align'] == 0 and e['phy_gap'] == 0 and
            e['phy_slane'] == 0 and e['phy_dec'] == 0,
            '%s DUT stream at the PHY: replication rules (copies, 0xAA fill, idle copies of /T/, gap multiple of %d '
@@ -212,7 +222,7 @@ def t_speeds(seed, quick):
         fa_all.append(fa)
         fb_all.append(fb)
     pargs += ['speeds=' + ','.join(map(str, speeds)), 'an=1', 'stress=30,30,30,30,30,30', 'lpi=0,0,0,30,0,0',
-              'txfmt=0,1,0,1,0,1', 'resignal=0,0,1,0,1,0', 'lockloss=1', 'lpdown=3', 'inconsist=2',
+              'txfmt=0,1,0,1,0,1', 'resignal=0,0,1,0,1,0', 'lockloss=1', 'lpdown=3', 'inconsist=2', 'busy=3',
               'oa=@oa.txt', 'ra=@ra.txt', 'ta=@ta.txt', 'pr=@pr.txt', 'ps=@ps.txt']
     out, log, d = run(tag, {}, pargs, seed)
     print('   ', out.replace('\n', '\n    '))

@@ -28,7 +28,8 @@
 // gap after the /T/ word a multiple of `rep` words (not checked across a speed
 // change); frames are rebuilt
 // (preamble, SFD, FCS checked) and stored in `rxq` with the DUT cycle of their
-// /S/ block. The inter-packet gap in bytes at the link speed is measured.
+// /S/ block. The inter-packet gap in bytes at the link speed is measured; data or
+// /T/ outside a frame (a frame without its start) is counted (n_orphan).
 //
 // Auto-negotiation: clause 37 figure 37-6 style (no next page), the PHY's word
 // `word` (bit 14 added in acknowledge), restart on `restart_req` (a new word:
@@ -76,6 +77,7 @@ bit          inconsist = 1'b0;          // one exchange: acknowledge with anothe
 
 // ---------------- results ----------------
 int  n_ins = 0, n_del = 0, n_lpi = 0, n_corrupt = 0, n_enc_err = 0;
+int  n_orphan = 0;                     // data / terminate outside a frame (no /S/ before it)
 int  n_dec_err = 0, n_rep_viol = 0, n_fill_err = 0, n_align_err = 0, n_gap_err = 0, n_s_lane_err = 0;
 int  n_an_done = 0, n_an_start = 0;
 int  ipg_min = 1 << 30, ipg_sum = 0, ipg_n = 0;
@@ -513,6 +515,7 @@ task automatic rx_word(logic [3:0] c, logic [31:0] d, int lane, int cyc);
         if (rep == 1) rk = 0;
         return;
     end
+    if (!in_fr && !in_tgrp && c != 4'hF && !(c == 4'h1 && d[7:0] == K_Q)) n_orphan++;
     if (in_fr || in_tgrp) begin
         if (rk == 0) begin
             // a sample

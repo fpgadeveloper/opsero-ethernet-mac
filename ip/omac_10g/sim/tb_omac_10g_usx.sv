@@ -29,6 +29,11 @@
 //                         link down (TB_LPDOWN)
 //   +inconsist=<p>        phase p: the PHY's first exchange is inconsistent (the
 //                         acknowledged word has another speed): the DUT must restart
+//   +busy=<p>             phase p: the DUT transmits 80 filler frames of 200 bytes
+//                         while auto-negotiation changes the speed (they are
+//                         replaced by the AN columns until the link is up, then
+//                         sent from a frame boundary on; skipped by the checks:
+//                         TB_PE skip_rx / skip_tx)
 //   +lt=<n>               the DUT's link timer through ctl_usx_link_timer (0 = parameter)
 // Results: TB_PH (link per phase), TB_PE (phase end: counts), TB_DONE.
 //
@@ -239,7 +244,8 @@ endtask
 // ---------------- main ----------------
 initial begin
     string sp, s_stress, s_lpi, s_cor, s_strict, s_fmt, s_resig, fn;
-    int nph, an, lockloss, lpdown, inc, code, t, n_exp_dut, n_exp_phy, rx0, prx0, lt_arg;
+    int nph, an, lockloss, lpdown, inc, busy, skip_rx, skip_tx, code, t, n_exp_dut, n_exp_phy, rx0, prx0, lt_arg;
+    int orph0;
     int c_rep0, c_good0, c_bad0, c_fcs0, viol0, fill0, align0, gap0, slane0, dec0;
     tframe_t pf [$];
     if (!$value$plusargs("speeds=%s", sp)) sp = "3";
@@ -253,6 +259,7 @@ initial begin
     if (!$value$plusargs("lockloss=%d", lockloss)) lockloss = -1;
     if (!$value$plusargs("lpdown=%d", lpdown)) lpdown = -1;
     if (!$value$plusargs("inconsist=%d", inc)) inc = -1;
+    if (!$value$plusargs("busy=%d", busy)) busy = -1;
     if (!$value$plusargs("lt=%d", lt_arg)) lt_arg = 0;
     if ($value$plusargs("oa=%s", fn)) fo = $fopen(fn, "w");
     if ($value$plusargs("ra=%s", fn)) fr = $fopen(fn, "w");
@@ -282,6 +289,14 @@ initial begin
         phy.resignal = csv_get(s_resig, p, 0);
         strict       = csv_get(s_strict, p, 0);
         phy.go = 1'b0;
+        skip_rx = phy.rxq.size(); skip_tx = tx_ts_n;
+        if (p == busy) begin
+            tframe_t f;
+            f.gap = 0; f.abort_beat = -1; f.under_beat = -1;
+            for (int k = 0; k < 200; k++) f.b.push_back(8'(k));
+            for (int k = 0; k < 80; k++) txq.push_back(f);
+            repeat (500) @(posedge clk);
+        end
         if (p > 0) begin
             if (an) begin
                 phy.word = 16'h9001 | (16'(code) << 9);
@@ -303,8 +318,16 @@ initial begin
             $display("TB_FAIL no link in phase %0d", p);
             break;
         end
+        if (p == busy) begin
+            // the rest of the filler frames, then drain
+            while (txq.size() > 0 || s_tvalid) @(posedge clk);
+            repeat (2000 + 40 * phy.rep) @(posedge clk);
+        end
+        skip_rx = phy.rxq.size() - skip_rx;
+        skip_tx = tx_ts_n - skip_tx;
         // frames both ways
         c_rep0 = n_rep; c_good0 = cnt[4]; c_bad0 = cnt[5]; c_fcs0 = cnt[6];
+        orph0 = phy.n_orphan;
         viol0 = phy.n_rep_viol; fill0 = phy.n_fill_err; align0 = phy.n_align_err; gap0 = phy.n_gap_err;
         slane0 = phy.n_s_lane_err; dec0 = phy.n_dec_err;
         rx0 = rx_n; prx0 = phy.rxq.size();
@@ -332,8 +355,8 @@ initial begin
             end
         end
         repeat (300) @(posedge clk);
-        $display("TB_PE p=%0d rx=%0d exp_rx=%0d phy_rx=%0d exp_phy_rx=%0d t=%0d rep_err=%0d good=%0d bad=%0d fcs=%0d phy_viol=%0d phy_fill=%0d phy_align=%0d phy_gap=%0d phy_slane=%0d phy_dec=%0d ipg_min=%0d ipg_sum=%0d ipg_n=%0d phy_corrupt=%0d phy_ins=%0d phy_del=%0d phy_lpi=%0d phy_enc=%0d",
-                 p, rx_n - rx0, n_exp_dut, phy.rxq.size() - prx0, n_exp_phy, t, n_rep - c_rep0, cnt[4] - c_good0,
+        $display("TB_PE p=%0d skip_rx=%0d skip_tx=%0d orphan=%0d rx=%0d exp_rx=%0d phy_rx=%0d exp_phy_rx=%0d t=%0d rep_err=%0d good=%0d bad=%0d fcs=%0d phy_viol=%0d phy_fill=%0d phy_align=%0d phy_gap=%0d phy_slane=%0d phy_dec=%0d ipg_min=%0d ipg_sum=%0d ipg_n=%0d phy_corrupt=%0d phy_ins=%0d phy_del=%0d phy_lpi=%0d phy_enc=%0d",
+                 p, skip_rx, skip_tx, phy.n_orphan - orph0, rx_n - rx0, n_exp_dut, phy.rxq.size() - prx0, n_exp_phy, t, n_rep - c_rep0, cnt[4] - c_good0,
                  cnt[5] - c_bad0, cnt[6] - c_fcs0, phy.n_rep_viol - viol0, phy.n_fill_err - fill0,
                  phy.n_align_err - align0, phy.n_gap_err - gap0, phy.n_s_lane_err - slane0, phy.n_dec_err - dec0,
                  phy.ipg_min, phy.ipg_sum, phy.ipg_n, phy.n_corrupt, phy.n_ins, phy.n_del, phy.n_lpi, phy.n_enc_err);
