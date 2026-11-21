@@ -21,6 +21,7 @@ TMB = os.path.join(ROOT, 'ip', 'omac_mdio', 'drivers', 'baremetal', 'test', 'tes
 T40 = os.path.join(ROOT, 'ip', 'omac_40g', 'sim', 'test_omac_40g.py')
 U40 = os.path.join(ROOT, 'ip', 'omac_40g', 'sim', 'test_40g_units.py')
 TGT = os.path.join(HERE, 'gt', 'test_gt.py')
+TUX = os.path.join(ROOT, 'ip', 'omac_10g', 'sim', 'test_omac_10g_usx.py')
 # transceiver-level tests (vendor GT models, slow): run only with --gt
 GT_TESTS = [
     ('gt_gty_loop', TGT, ['gty', '40'], ['gty', '8'], 'omac_gt_usp_gty_quad, two lanes crossed: reset, CDR, '
@@ -53,6 +54,36 @@ TESTS = [
     ('10g_ts', T10, ['ts'], ['ts', '--quick'], 'timestamp hooks (TS_EN): TX ts = /S/ block on the wire (Python decode), '
      'RX ts = TX ts + channel latency, lane 4, PAUSE, drops, aborts, line errors, min-gap frames'),
     ('10g_ts25', T10, ['ts25'], ['ts25', '--quick'], 'timestamp hooks at SPEED 25'),
+    # USXGMII (USXGMII_EN = 1)
+    ('usx_axil', TUX, ['axil'], ['axil'], 'omac_10g_usx_axil register block: every register, strobes, W1C, irq, counters'),
+    ('usx_speeds', TUX, ['speeds'], ['speeds', '--quick'], 'DUT vs PHY model: AN 10G -> 1G -> 2.5G -> 5G -> 100M -> '
+     '10M on the fly, frames 60-9000 B both ways, FCS errors, aborts, idle insertion / deletion, LPI, lock loss, '
+     'replication rules, timestamps'),
+    ('usx_corrupt', TUX, ['corrupt'], ['corrupt', '--quick'], 'replica disagreement: counted once per frame, '
+     'strict 0 = frames good, strict 1 = exactly those frames bad'),
+    ('usx_forced', TUX, ['forced'], ['forced', '--quick'], 'AN off at both ends: forced 10G, 2.5G, 1G, 100M'),
+    ('usx_antimer', TUX, ['antimer'], ['antimer'], 'the default 1.6 ms link timer: AN in 3 link timers'),
+    ('usx_loop10g', T10, ['loop10g'], ['loop10g', '--quick'], 'USXGMII pair at 10G: AN, frames, errors, PAUSE, wire '
+     'decode, DIC, timestamps'),
+    ('usx_loop5g', T10, ['loop5g'], ['loop5g', '--quick'], 'the same at 5G (replication 2), wire decode with the '
+     'replication rules'),
+    ('usx_loop2p5g', T10, ['loop2p5g'], ['loop2p5g', '--quick'], 'the same at 2.5G (replication 4)'),
+    ('usx_loop1g', T10, ['loop1g'], ['loop1g', '--quick'], 'the same at 1G (replication 10)'),
+    ('usx_loop100m', T10, ['loop100m'], ['loop100m', '--quick'], 'the same at 100M (replication 100)'),
+    ('usx_loop10m', T10, ['loop10m'], ['loop10m', '--quick'], 'the same at 10M (replication 1000)'),
+    ('usx_pause1g', T10, ['pause_usx1g'], ['pause_usx1g'], 'PAUSE over USXGMII at 1G: quanta in 1G bit times '
+     '(100 quanta = 8000 cycles), XON, refresh, honour, frame contents'),
+    ('usx_pause2p5g', T10, ['pause_usx2p5g'], ['pause_usx2p5g'], 'the same at 2.5G'),
+    ('10g_frames_usx', T10, ['frames', '--seed', '1', '--usx'], ['frames', '--seed', '1', '--quick', '--usx'],
+     '10g_frames with USXGMII_EN = 1 (auto-negotiated 10G)'),
+    ('10g_errors_usx', T10, ['errors', '--usx'], ['errors', '--quick', '--usx'], '10g_errors with USXGMII_EN = 1'),
+    ('10g_runt_usx', T10, ['runt', '--usx'], ['runt', '--quick', '--usx'], '10g_runt with USXGMII_EN = 1'),
+    ('10g_pause10_usx', T10, ['pause10', '--usx'], ['pause10', '--usx'], '10g_pause10 with USXGMII_EN = 1'),
+    ('10g_fault_usx', T10, ['fault', '--usx'], ['fault', '--usx'], '10g_fault with USXGMII_EN = 1 (AN restart on '
+     'lock loss)'),
+    ('10g_hiber_usx', T10, ['hiber', '--usx'], ['hiber', '--usx'], '10g_hiber with USXGMII_EN = 1'),
+    ('10g_watchdog_usx', T10, ['watchdog', '--usx'], ['watchdog', '--usx'], '10g_watchdog with USXGMII_EN = 1'),
+    ('10g_ts_usx', T10, ['ts', '--usx'], ['ts', '--quick', '--usx'], '10g_ts with USXGMII_EN = 1'),
     ('40g_units', U40, [], [], '40GBASE-R marker / BIP vectors (tables 82-3/82-4), marker insertion + stall, '
      'lane AM lock + BIP, 256-bit CRC identities'),
     ('40g_frames', T40, ['frames', '--seed', '1'], ['frames', '--seed', '1', '--quick'],

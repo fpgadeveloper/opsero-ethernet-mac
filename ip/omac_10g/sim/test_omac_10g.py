@@ -24,7 +24,17 @@
 #              hand-computed from tb_gt_chan), constant on every beat; aborts,
 #              underflows, line errors, oversize cuts (delivered, bad), PAUSE frames
 #              (consumed: no RX timestamp), back-to-back minimum-gap frames
-# Usage: test_omac_10g.py [test ...] [--seed N] [--quick]
+#   loop<s>    USXGMII (USXGMII_EN = 1) pair, both advertising speed s (10g, 5g,
+#              2p5g, 1g, 100m, 10m): auto-negotiation, frames both ways with
+#              aborts, underflows, oversize cuts, PAUSE frames and line bit flips,
+#              A's wire decoded by the Python model with the USXGMII replication
+#              rules (omac_ref.parse_capture_usx: copies, 0xAA fill, idle copies of
+#              /T/, /S/ lane, gap multiple of the replication, gap and deficit idle
+#              count at the link speed), timestamps (TX = /S/ block on the wire,
+#              RX = TX + channel latency at every speed)
+# --usx: the tests above with both IPs at USXGMII_EN = 1, auto-negotiated 10G
+#        (results under sim/build/omac_10g/<test>_usx)
+# Usage: test_omac_10g.py [test ...] [--seed N] [--quick] [--usx]
 #
 # Copyright (c) 2026 Opsero Electronic Design Inc.
 
@@ -65,10 +75,16 @@ class Check:
         return self.fails
 
 
+EXTRA = {}       # --usx: generics added to every run
+
+
 def run(tag, generics, plusargs, seed, timeout=3600):
+    if EXTRA:
+        tag += '_usx'
     d = os.path.join(S.BUILD, 'omac_10g', tag)
     os.makedirs(d, exist_ok=True)
     g = dict(SPEED=10, A_TX_PAD=1, B_MAX_FRAME=9600, WD=2097152, TS_EN=0)
+    g.update(EXTRA)
     g.update(generics)
     bdir = os.path.join(S.BUILD, 'omac_10g', 'b_' + '_'.join('%s%d' % kv for kv in sorted(g.items())))
     out, log = S.xsim(bdir, 'tb_omac_10g', g, SRCS, [p.replace('@', d + '/') for p in plusargs], timeout, seed,
@@ -113,7 +129,7 @@ def t_frames(seed, quick, speed=10):
         ln = rng.choice([rng.randint(1, 59), rng.randint(60, 1518), rng.randint(60, 9000)])
         fb.append(dict(b=rnd_frame(rng, ln), gap=rng.randint(0, 20)))
     tag = 'frames%d_s%d' % (speed, seed)
-    d = os.path.join(S.BUILD, 'omac_10g', tag)
+    d = os.path.join(S.BUILD, 'omac_10g', tag + ('_usx' if EXTRA else ''))
     os.makedirs(d, exist_ok=True)
     M.write_frames(os.path.join(d, 'fa.txt'), fa)
     M.write_frames(os.path.join(d, 'fb.txt'), fb)
@@ -172,7 +188,7 @@ def t_errors(seed, quick):
     for i in range(n):
         fb.append(dict(b=rnd_frame(rng, rng.randint(200, 3000)), gap=rng.randint(0, 10)))
     tag = 'errors_s%d' % seed
-    d = os.path.join(S.BUILD, 'omac_10g', tag)
+    d = os.path.join(S.BUILD, 'omac_10g', tag + ('_usx' if EXTRA else ''))
     os.makedirs(d, exist_ok=True)
     M.write_frames(os.path.join(d, 'fa.txt'), fa)
     M.write_frames(os.path.join(d, 'fb.txt'), fb)
@@ -222,7 +238,7 @@ def t_runt(seed, quick):
         else:
             exp.append((False, b))
     tag = 'runt_s%d' % seed
-    d = os.path.join(S.BUILD, 'omac_10g', tag)
+    d = os.path.join(S.BUILD, 'omac_10g', tag + ('_usx' if EXTRA else ''))
     os.makedirs(d, exist_ok=True)
     M.write_frames(os.path.join(d, 'fa.txt'), fa)
     out, d = run(tag, dict(A_TX_PAD=0, B_MAX_FRAME=1518), ['mode=frames', 'fa=@fa.txt', 'ob=@ob.txt'], seed)
@@ -242,23 +258,30 @@ def t_runt(seed, quick):
 
 
 # ---------------------------------------------------------------- pause
-def t_pause(seed, quick, speed=10):
-    ck = Check('pause%d' % speed)
+def t_pause(seed, quick, speed=10, usx=None):
+    # usx: USXGMII speed name (USX_SPEEDS): the pause timers count in bit times of that speed
+    code, rep = USX_SPEEDS[usx] if usx else (3, 1)
+    ck = Check('pause%d' % speed if not usx else 'pause_usx_%s' % usx)
     period = 2.56 if speed == 25 else 6.4
-    tag = 'pause%d_s%d' % (speed, seed)
-    out, d = run(tag, dict(SPEED=speed), ['mode=pause', 'ob=@ob.txt', 'cap=@cap.txt', 'capn=60000'], seed)
+    tag = 'pause%d_s%d' % (speed, seed) if not usx else 'pause_usx_%s_s%d' % (usx, seed)
+    g = dict(SPEED=speed) if not usx else dict(USX=1, USX_SPEED=code)
+    out, d = run(tag, g, ['mode=pause', 'ob=@ob.txt', 'cap=@cap.txt', 'capn=60000'], seed)
     print('   ', out.replace('\n', '\n    '))
     ck('TB_DONE' in out and 'TB_FAIL' not in out, 'simulation completed')
     pz = [p['cycles'] for p in S.tb_values(out, 'PAUSE')]
     ck(len(pz) == 3, 'three PAUSE periods at B: %s cycles' % pz)
     if len(pz) == 3:
-        ck(abs(pz[0] - 800) <= 2, 'XOFF 100 quanta: rx_pause_req %d cycles = %.1f ns (100 x 512 bit times = %.1f ns at %dG)'
-           % (pz[0], pz[0] * period, 100 * 512 / speed, speed))
-        ck(1950 <= pz[1] <= 2150, 'XOFF 65535 then XON after 2000 cycles: held %d cycles' % pz[1])
-        ck(9900 <= pz[2] <= 10150, 'XOFF 200 refreshed every 100 quanta for 10000 cycles: one period of %d cycles' % pz[2])
+        gbps = speed / rep
+        # the timer counts 64 bit times per enabled cycle (one in `rep`): resolution rep cycles
+        ck(abs(pz[0] - 800 * rep) <= 2 + rep, 'XOFF 100 quanta: rx_pause_req %d cycles = %.1f ns (100 x 512 bit times = '
+           '%.1f ns at %g Gb/s)' % (pz[0], pz[0] * period, 100 * 512 / gbps, gbps))
+        ck(1950 <= pz[1] <= 2150 + 40 * rep, 'XOFF 65535 then XON after 2000 cycles: held %d cycles' % pz[1])
+        ck(9900 <= pz[2] <= 10150 + 40 * rep, 'XOFF 200 refreshed every 100 quanta for 10000 cycles: one period of %d cycles'
+           % pz[2])
     st = S.tb_values(out, 'PSTARTS')[0]
     ck(st['total'] > 20 and st['in_pause'] == 0, 'B honours PAUSE: %d frame starts, %d while paused' % (st['total'], st['in_pause']))
-    frames, info = M.parse_capture(os.path.join(d, 'cap.txt'))
+    frames, info = (M.parse_capture(os.path.join(d, 'cap.txt')) if rep == 1 else
+                    M.parse_capture_usx(os.path.join(d, 'cap.txt'), rep))
     pf = [f for f in frames if M.pause_fields(f[0])[2] == 0x8808]
     times = [M.pause_fields(f[0])[4] for f in pf]
     ok = all(f[1] and len(f[0]) == 60 and M.pause_fields(f[0])[:2] == (bytes.fromhex('0180c2000001'), MAC_A) and
@@ -267,7 +290,8 @@ def t_pause(seed, quick, speed=10):
        % len(pf))
     n200 = sum(1 for t in times if t == 200)
     exp_seq = [100, 0, 65535, 0] + [200] * n200 + [0]
-    ck(times == exp_seq and n200 >= 11, 'pause_time sequence: 100, XON, 65535, XON, 200 x %d (refresh), XON' % n200)
+    ck(times == exp_seq and n200 >= max(1, 11 // rep), 'pause_time sequence: 100, XON, 65535, XON, 200 x %d '
+       '(refresh), XON' % n200)
     cb = counts(out, 'B')
     rx = S.tb_values(out, 'RX')[0]
     ck(cb.get('rxp') == len(pf) and rx['ctrl_seen'] == 0, 'B: %s PAUSE frames received and consumed (none on the AXI-Stream)'
@@ -367,7 +391,7 @@ def t_ts(seed, quick, speed=10):
     for i in range(n):
         fb.append(dict(b=rnd_frame(rng, rng.randint(60, 1514)), gap=rng.choice([0, 0, rng.randint(1, 20)])))
     tag = 'ts%d_s%d' % (speed, seed)
-    d = os.path.join(S.BUILD, 'omac_10g', tag)
+    d = os.path.join(S.BUILD, 'omac_10g', tag + ('_usx' if EXTRA else ''))
     os.makedirs(d, exist_ok=True)
     M.write_frames(os.path.join(d, 'fa.txt'), fa)
     M.write_frames(os.path.join(d, 'fb.txt'), fb)
@@ -419,7 +443,117 @@ def t_ts(seed, quick, speed=10):
     return ck.done()
 
 
+# ---------------------------------------------------------------- USXGMII loop
+USX_SPEEDS = {'10g': (3, 1), '5g': (5, 2), '2p5g': (4, 4), '1g': (2, 10), '100m': (1, 100), '10m': (0, 1000)}
+
+
+def t_loop(seed, quick, name):
+    code, rep = USX_SPEEDS[name]
+    ck = Check('loop_%s' % name)
+    rng = random.Random(seed + 900 + code)
+    n = {3: 150, 5: 80, 4: 60, 2: 30, 1: 10, 0: 5}[code]
+    if quick:
+        n = max(4, n // 3)
+    lmax = 1514 if rep <= 10 else 600
+    fa, fb = [], []
+    for i in range(n):
+        k = rng.random()
+        if i < n // 3:                                   # back to back at the minimum gap
+            ln, gap = rng.randint(60, 128), 0
+        else:
+            ln, gap = rng.choice([rng.randint(1, 59), rng.randint(60, lmax), rng.randint(60, 300)]), \
+                rng.choice([0, rng.randint(1, 30)])
+        f = dict(b=rnd_frame(rng, ln), gap=gap)
+        nb = (ln + 7) // 8
+        if i >= n // 3 and k < 0.08 and nb > 3:
+            f['abort'] = rng.randint(2, nb - 1)
+        elif i >= n // 3 and k < 0.16 and nb > 3:
+            f['under'] = rng.randint(2, nb - 1)
+        elif i >= n // 3 and k < 0.22 and rep <= 10:
+            f['b'] = rnd_frame(rng, rng.randint(1515, 2500))     # cut at B (MAX_FRAME 1518)
+        fa.append(f)
+    for i in range(n):
+        fb.append(dict(b=rnd_frame(rng, rng.randint(60, lmax)), gap=rng.choice([0, 0, rng.randint(1, 20)])))
+    nbytes = sum(len(f['b']) + 30 for f in fa) + 4 * 100
+    cyc = (nbytes // 8 + 2 * n) * rep + 20000
+    tag = 'loop_%s_s%d' % (name, seed)
+    d = os.path.join(S.BUILD, 'omac_10g', tag)
+    os.makedirs(d, exist_ok=True)
+    M.write_frames(os.path.join(d, 'fa.txt'), fa)
+    M.write_frames(os.path.join(d, 'fb.txt'), fb)
+    out, d = run(tag, dict(TS_EN=1, B_MAX_FRAME=1518, USX=1, USX_SPEED=code),
+                 ['mode=ts', 'fa=@fa.txt', 'fb=@fb.txt', 'oa=@oa.txt', 'ob=@ob.txt', 'cap=@cap.txt',
+                  'capn=%d' % (cyc + 10000), 'maxcyc=%d' % (2 * cyc), 'ta=@ta.txt', 'tb=@tb.txt', 'ra=@ra.txt',
+                  'rb=@rb.txt'], seed, timeout=7200)
+    print('   ', out.replace('\n', '\n    '))
+    ck('TB_DONE' in out and 'TB_FAIL' not in out, 'simulation completed')
+    u = S.tb_values(out, 'USX')[0]
+    ck(u['a_speed'] == code and u['b_speed'] == code and (u['a_lp'] >> 9) & 7 == code and u['a_lp'] & 0xD001 == 0xD001,
+       'auto-negotiated: both at speed code %d (replication %d), A received 0x%04x' % (code, rep, u['a_lp']))
+    cap0 = S.tb_values(out, 'CAP0')[0]['cyc']
+    ta, tb_ = read_ts(os.path.join(d, 'ta.txt')), read_ts(os.path.join(d, 'tb.txt'))
+    ra, rb = read_ts(os.path.join(d, 'ra.txt')), read_ts(os.path.join(d, 'rb.txt'))
+    oa, ob = M.read_rx(os.path.join(d, 'oa.txt')), M.read_rx(os.path.join(d, 'ob.txt'))
+    if rep == 1:
+        frames, info = M.parse_capture(os.path.join(d, 'cap.txt'))
+        info.update(rep_err=0, align_err=0, s_lane_err=0)
+    else:
+        frames, info = M.parse_capture_usx(os.path.join(d, 'cap.txt'), rep)
+    ck(info['invalid'] == 0 and info['rep_err'] == 0 and info['align_err'] == 0 and info['s_lane_err'] == 0,
+       'Python decoder on A\'s wire: %d invalid blocks, %d copy errors, %d gap alignment errors, %d /S/ not in lane 0'
+       % (info['invalid'], info['rep_err'], info['align_err'], info['s_lane_err']))
+    exp_wire = [pad60(f['b']) for f in fa]
+    okf = [f for f in frames if f[1]]
+    ck(len(frames) >= n, 'Python decoder: %d frames on the wire (%d with FCS ok; %d user frames + PAUSE)'
+       % (len(frames), len(okf), n))
+    good_user = [f[0] for f in frames if f[1] and f[0][12:14] != b'\x88\x08']
+    exp_good = [pad60(f['b']) for f in fa if 'abort' not in f and 'under' not in f]
+    ck(good_user == exp_good, 'Python decoder: the %d good frames on the wire = the frames sent (aborts and underflows '
+       'end with an error)' % len(exp_good))
+    g = info['gaps'][:n // 3 - 2]
+    if g:
+        mean = sum(g) / len(g)
+        ck(min(info['gaps']) >= 9 and sum(g) >= 12 * len(g) - 3 and mean <= 12.5,
+           'IPG at the link speed (from /T/ to /S/): min %d, mean %.3f over %d back-to-back frames (DIC)'
+           % (min(info['gaps']), mean, len(g)))
+    tcap = [t for t in ta if t[0] >= cap0 + 1]
+    m = min(len(tcap), len(frames))
+    bad_t = [i for i in range(m) if tcap[i][0] != cap0 + info['sof_line'][i]]
+    ck(m >= n and not bad_t, 'A: transmit timestamp = the cycle of the /S/ block on gt_tx_data, %d frames (%d '
+       'mismatches)' % (m, len(bad_t)))
+    ck(all(tcap[i][1] == (frames[i][2] == 4) for i in range(m)) and (rep == 1 or all(t[1] == 0 for t in ta)),
+       'A: tx_ts_lane4 = start lane (%s)' % ('lane 0 only at replication > 1' if rep > 1 else
+                                              '%d lane-4 starts' % sum(1 for t in tcap[:m] if t[1])))
+    ua = [t for t in ta if t[2] == 1]
+    ub = [t for t in tb_ if t[2] == 1]
+    ck(len(ua) == n and len(ub) == n and len(ta) == n + 2, 'one timestamp per frame: A %d user + %d PAUSE, B %d'
+       % (len(ua), len(ta) - len(ua), len(ub)))
+    for lbl, tx, rx, got in (('A->B', ua, rb, ob), ('B->A', ub, ra, oa)):
+        k = min(len(rx), len(tx))
+        diff = sorted(set(rx[i][0] - tx[i][0] for i in range(k)))
+        ck(len(rx) == len(got) == n and diff == [CH_LAT] and all(rx[i][1] == tx[i][1] for i in range(k)) and
+           all(r[2] == 1 for r in rx), '%s: %d frames, RX ts - TX ts = %s cycles (channel %d), lane4 equal, constant '
+           'on every beat' % (lbl, len(rx), diff[:4], CH_LAT))
+    nb_exp = sum(1 for f in fa if 'abort' in f or 'under' in f or len(f['b']) > 1514)
+    ck(sum(1 for u_, _ in ob if u_) == nb_exp, 'A->B: %d bad frames (abort, underflow, oversize cut) delivered' % nb_exp)
+    ck(all(g_ == pad60(f['b']) for (u_, g_), f in zip(ob, fa) if not u_), 'A->B: good frames exact')
+    inj = S.tb_values(out, 'INJ')[0]['dflip_ba']
+    nbad_a = sum(1 for u_, _ in oa if u_)
+    ck(all(g_ == pad60(f['b']) for (u_, g_), f in zip(oa, fb) if not u_) and nbad_a <= inj and
+       (u['a_rep'] >= inj if rep > 1 else nbad_a == inj),
+       'B->A: %d line bit flips: %d frames bad, %d replica mismatches at A, all good frames exact'
+       % (inj, nbad_a, u['a_rep']))
+    ck(u['b_rep'] == 0, 'A->B: no replica mismatch at B')
+    return ck.done()
+
+
 TESTS = {
+    'loop10g': lambda s, q: t_loop(s, q, '10g'),
+    'loop5g': lambda s, q: t_loop(s, q, '5g'),
+    'loop2p5g': lambda s, q: t_loop(s, q, '2p5g'),
+    'loop1g': lambda s, q: t_loop(s, q, '1g'),
+    'loop100m': lambda s, q: t_loop(s, q, '100m'),
+    'loop10m': lambda s, q: t_loop(s, q, '10m'),
     'ts': lambda s, q: t_ts(s, q, 10),
     'ts25': lambda s, q: t_ts(s, q, 25),
     'frames': lambda s, q: t_frames(s, q, 10),
@@ -428,6 +562,8 @@ TESTS = {
     'runt': t_runt,
     'pause10': lambda s, q: t_pause(s, q, 10),
     'pause25': lambda s, q: t_pause(s, q, 25),
+    'pause_usx1g': lambda s, q: t_pause(s, q, 10, '1g'),
+    'pause_usx2p5g': lambda s, q: t_pause(s, q, 10, '2p5g'),
     'fault': t_fault,
     'hiber': t_hiber,
     'watchdog': t_watchdog,
@@ -442,9 +578,11 @@ def main():
         seed = int(args[i + 1])
         del args[i:i + 2]
     quick = '--quick' in args
-    args = [a for a in args if a != '--quick']
+    if '--usx' in args:
+        EXTRA.update(USX=1)
+    args = [a for a in args if a not in ('--quick', '--usx')]
     M.selftest()
-    sel = args or list(TESTS)
+    sel = args or [t for t in TESTS if not t.startswith('loop') and 'usx' not in t]
     fails = 0
     for t in sel:
         print('== %s (seed %d)' % (t, seed), flush=True)

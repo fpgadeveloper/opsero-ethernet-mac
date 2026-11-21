@@ -12,9 +12,11 @@
 //   burst     > 0: the next `burst` blocks get an invalid header
 //   dflip     > 0: one payload bit flip in a data block every >= dflip blocks,
 //                  at most one per frame (re-armed by the next control block);
-//                  never in the first data block after a control block (for a
-//                  lane-4 start it carries the preamble and SFD: a hit there
-//                  makes the frame disappear, correctly); n_dflip counts them
+//                  never in the first `dskip` data blocks after a control block
+//                  (default 1: for a lane-4 start the first carries the preamble
+//                  and SFD, a hit there makes the frame disappear, correctly;
+//                  USXGMII at replication N: N, the copies of /S/ and the
+//                  preamble); n_dflip counts them
 //   kill      = 1: every header invalid (no lock possible)
 //
 // Copyright (c) 2026 Opsero Electronic Design Inc.
@@ -35,6 +37,7 @@ module tb_gt_chan (
 int hdr_rate = 0;
 int burst    = 0;
 int dflip    = 0;
+int dskip    = 1;
 bit kill     = 1'b0;
 int n_dflip  = 0;
 int n_hdr    = 0;
@@ -45,7 +48,7 @@ logic [65:0] prev = '0, cur = '0;
 int  slip_cd = 0;
 int  dcount = 0;
 bit  armed = 1'b1;
-bit  prev_ctrl = 1'b1;
+int  dsince = 0;               // data blocks since the last control block
 
 initial begin
     phase = $urandom_range(65);
@@ -70,7 +73,7 @@ always @(posedge clk) begin
     if (dflip > 0) begin
         dcount++;
         if (tx_hdr == 2'b01) armed = 1'b1;
-        if (armed && dcount >= dflip && tx_hdr == 2'b10 && !prev_ctrl) begin
+        if (armed && dcount >= dflip && tx_hdr == 2'b10 && dsince >= dskip) begin
             fbit = 2 + $urandom_range(63);
             b[fbit] = !b[fbit];
             armed  = 1'b0;
@@ -78,7 +81,7 @@ always @(posedge clk) begin
             n_dflip++;
         end
     end
-    prev_ctrl = (tx_hdr == 2'b01);
+    dsince = (tx_hdr == 2'b01) ? 0 : dsince + 1;
     prev <= cur;
     cur  <= b;
     v = {cur, prev};

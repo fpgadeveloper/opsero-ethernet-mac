@@ -135,6 +135,102 @@ def parse_capture(path):
     return frames, dict(gaps=gaps, invalid=invalid, fault_cols=fault_cols, sof_line=sof_line)
 
 
+
+# ---------------------------------------------------------------- USXGMII
+USX_FILL = 0xAA   # lane 0 of the copies of a replicated /S/ word (EDCS-1517762 2.6.3)
+
+
+def parse_capture_usx(path, rep):
+    """Decode a USXGMII TX capture at replication `rep` (2..1000): the 32-bit words of
+    the decoded stream are checked against the replication rules (each word sent rep
+    times; the copies of the /S/ word carry 0xAA in lane 0, the copies of the word with
+    /T/ are idle words; the /S/ word in lane 0 of a block; the words from a /T/ word to
+    the next /S/ a multiple of rep), then de-replicated (one word in rep, from the /S/
+    on) and parsed as in parse_capture. Returns (frames, info): frames = list of (bytes
+    without FCS, fcs_ok, start_lane); info = dict(gaps = IPG in bytes at the link speed
+    from /T/ inclusive to /S/, invalid, rep_err, align_err, s_lane_err, sof_line)."""
+    ds = Descrambler()
+    lanes = []
+    invalid = 0
+    first = True
+    for line in open(path):
+        h, d = line.split()
+        p = ds.word(int(d, 16))
+        if first:
+            first = False
+            continue
+        blk = decode_block(int(h), p)
+        if blk is None:
+            invalid += 1
+            blk = [(1, ERROR)] * 8
+        lanes.extend(blk)
+    words = [tuple(lanes[4 * i:4 * i + 4]) for i in range(len(lanes) // 4)]
+    idle_w = ((1, IDLE),) * 4
+    frames, gaps, sof_line = [], [], []
+    rep_err = align_err = s_lane_err = 0
+    last_t, t_bytes = None, 0
+    i, n = 0, len(words)
+    while i < n:
+        w = words[i]
+        if w[0] != (1, START):
+            i += 1
+            continue
+        if i + rep * 3 > n:
+            break
+        start_lane = 4 * (i % 2)
+        if start_lane != 0:
+            s_lane_err += 1
+        if last_t is not None:
+            gw = i - last_t
+            if gw % rep:
+                align_err += 1
+            gaps.append(t_bytes + 4 * ((gw - rep) // rep))
+        # copies of the /S/ word
+        for r in range(1, rep):
+            c = words[i + r]
+            if c[0] != (0, USX_FILL) or c[1:] != w[1:]:
+                rep_err += 1
+        data = [v for _, v in w[1:]]
+        j = i + rep
+        ok_end = False
+        while j + rep <= n:
+            sw = words[j]
+            t = [k for k in range(4) if sw[k] == (1, TERM)]
+            for r in range(1, rep):
+                c = words[j + r]
+                if (c != idle_w) if t else (c != sw):
+                    rep_err += 1
+            if t:
+                k = t[0]
+                if any(sw[x][0] for x in range(k)) or any(sw[x] != (1, IDLE) for x in range(k + 1, 4)):
+                    break
+                data += [v for _, v in sw[:k]]
+                t_bytes = 4 - k
+                last_t = j
+                ok_end = True
+                j += rep
+                break
+            if any(cc for cc, _ in sw):
+                break
+            data += [v for _, v in sw]
+            j += rep
+        if not ok_end:
+            # ended by an error (abort / underflow) or cut off: a bad frame
+            frames.append((bytes(data[7:]), False, start_lane))
+            sof_line.append(1 + i // 2)
+            last_t = None
+            i = max(j, i + 1)
+            continue
+        good_pre = data[:7] == [0x55] * 6 + [0xD5]
+        body = bytes(data[7:])
+        ok = good_pre and len(body) >= 4 and fcs(body[:-4]) == body[-4:]
+        frames.append((body[:-4], ok, start_lane))
+        sof_line.append(1 + i // 2)
+        i = j
+    return frames, dict(gaps=gaps, invalid=invalid, rep_err=rep_err, align_err=align_err, s_lane_err=s_lane_err,
+                        sof_line=sof_line)
+
+
 # ---------------------------------------------------------------- 40GBASE-R
 # IEEE 802.3 table 82-3, 40GBASE-R: M0, M1, M2 of PCS lanes 0..3 (M4..M6 = ~M0..~M2)
 AM40 = [(0x90, 0x76, 0x47), (0xF0, 0xC4, 0xE6), (0xC5, 0x65, 0x9B), (0xA2, 0x79, 0x3D)]

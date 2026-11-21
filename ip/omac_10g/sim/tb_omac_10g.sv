@@ -14,6 +14,10 @@
 //   +ta=<file> +tb=<file>      (TS_EN) A's / B's transmit timestamps ("val lane4 user")
 //   +ra=<file> +rb=<file>      (TS_EN) timestamps of the frames received by A / B
 //                              ("ts lane4 const": const = 1 if equal on every beat)
+//   +maxcyc=<n>                limit of the frame phase in clk_a cycles (default 4,000,000)
+// USX = 1: both IPs with USXGMII_EN = 1, auto-negotiation on, both advertising
+// the speed USX_SPEED (word bits 11:9), link timer USX_LT; the counters also
+// report ev_usx_rep_error (TB_USX).
 // Time values for the timestamp hooks: cyc_a / cyc_b count clk_a / clk_b cycles
 // (A: tx_ts_in = cyc_a, rx_ts_in = cyc_b, since A receives on clk_b; B mirrored).
 // Results: TB_* lines (link times, event counts, mode-specific measurements),
@@ -29,8 +33,16 @@ module tb_omac_10g #(
     parameter int A_TX_PAD    = 1,
     parameter int B_MAX_FRAME = 9600,
     parameter int WD          = 2097152,
-    parameter int TS_EN       = 0
+    parameter int TS_EN       = 0,
+    parameter int USX         = 0,
+    parameter int USX_SPEED   = 3,
+    parameter int USX_LT      = 2000
 );
+
+// replication factor of USX_SPEED (1 without USXGMII)
+localparam int REPN = (USX == 0) ? 1 : (USX_SPEED == 0) ? 1000 : (USX_SPEED == 1) ? 100 : (USX_SPEED == 2) ? 10 :
+                      (USX_SPEED == 4) ? 4 : (USX_SPEED == 5) ? 2 : 1;
+localparam logic [15:0] USX_ADV = 16'h9001 | (16'(USX_SPEED) << 9);
 
 `include "tb_util.svh"
 
@@ -78,11 +90,18 @@ wire [2:0]  a_lb, b_lb;
 logic [31:0] cyc_a = '0, cyc_b = '0;
 always @(posedge clk_a) cyc_a <= cyc_a + 1;
 always @(posedge clk_b) cyc_b <= cyc_b + 1;
+wire  [15:0] a_lpw, b_lpw;
+wire  [2:0]  a_usp, b_usp;
+wire         a_rep, b_rep;
+int          a_rep_n = 0, b_rep_n = 0;
+always @(posedge clk_a) if (a_rep) a_rep_n++;
+always @(posedge clk_b) if (b_rep) b_rep_n++;
 wire         a_ts_v, b_ts_v, a_ts_l4, b_ts_l4, a_ts_u, b_ts_u, a_rts_l4, b_rts_l4;
 wire  [31:0] a_ts_val, b_ts_val, a_rts, b_rts;
 
 `define OMAC_INST(X, CLK, RCLK, RST, PAD, MAXF, TXT, RXT) \
-omac_10g #(.SPEED(SPEED), .TX_PAD(PAD), .MAX_FRAME(MAXF), .RX_WATCHDOG(WD), .TS_EN(TS_EN), .TS_W(32)) dut_``X ( \
+omac_10g #(.SPEED(SPEED), .TX_PAD(PAD), .MAX_FRAME(MAXF), .RX_WATCHDOG(WD), .TS_EN(TS_EN), .TS_W(32), \
+           .USXGMII_EN(USX), .USX_LINK_TIMER(USX_LT)) dut_``X ( \
     .clk(CLK), .rst(RST), \
     .s_axis_tx_tdata(X``_s_tdata), .s_axis_tx_tkeep(X``_s_tkeep), .s_axis_tx_tvalid(X``_s_tvalid), \
     .s_axis_tx_tready(X``_s_tready), .s_axis_tx_tlast(X``_s_tlast), .s_axis_tx_tuser(X``_s_tuser), \
@@ -102,7 +121,11 @@ omac_10g #(.SPEED(SPEED), .TX_PAD(PAD), .MAX_FRAME(MAXF), .RX_WATCHDOG(WD), .TS_
     .gt_rx_clk(RCLK), .gt_rx_ready(gt_ready), .gt_rx_valid(X``_rx_valid), .gt_rx_hdr(X``_rx_hdr), \
     .gt_rx_data(X``_rx_data), .gt_rx_slip(X``_slip), .gt_rx_reset_req(X``_wd), \
     .tx_ts_in(TXT), .tx_ts_valid(X``_ts_v), .tx_ts_val(X``_ts_val), .tx_ts_lane4(X``_ts_l4), \
-    .tx_ts_user(X``_ts_u), .rx_ts_in(RXT), .m_axis_rx_ts(X``_rts), .m_axis_rx_ts_lane4(X``_rts_l4));
+    .tx_ts_user(X``_ts_u), .rx_ts_in(RXT), .m_axis_rx_ts(X``_rts), .m_axis_rx_ts_lane4(X``_rts_l4), \
+    .ctl_usx_an_enable(1'b1), .ctl_usx_an_restart(1'b0), .ctl_usx_an_adv(USX_ADV), \
+    .ctl_usx_speed(3'(USX_SPEED)), .ctl_usx_link_timer(20'd0), .ctl_usx_rx_strict(1'b0), \
+    .stat_usx_an_complete(), .stat_usx_an_state(), .stat_usx_lp_word(X``_lpw), .stat_usx_speed(X``_usp), \
+    .stat_usx_link_ok(), .ev_usx_an_start(), .ev_usx_an_done(), .ev_usx_rep_error(X``_rep));
 
 `OMAC_INST(a, clk_a, clk_b, rst_a, A_TX_PAD, 9600, cyc_a, cyc_b)
 `OMAC_INST(b, clk_b, clk_a, rst_b, 1, B_MAX_FRAME, cyc_b, cyc_a)
@@ -172,7 +195,7 @@ initial begin : drv_``X \
         for (int bt = 0; bt < nb; bt++) begin \
             if (bt == f.under_beat) begin \
                 X``_s_tvalid <= 1'b0; \
-                repeat (3) @(posedge CLK); \
+                repeat (3 * REPN) @(posedge CLK); \
             end \
             X``_s_tvalid <= 1'b1; \
             X``_s_tlast  <= (bt == nb - 1); \
@@ -277,17 +300,17 @@ always @(posedge clk_b) begin
         pz_len.push_back(pz_cur);
         pz_cur = 0;
     end
-    if ((dut_b.u_mac_tx.xc == 8'h01 && dut_b.u_mac_tx.xd[7:0] == 8'hFB) ||
-        (dut_b.u_mac_tx.xc == 8'h1F && dut_b.u_mac_tx.xd[39:32] == 8'hFB)) begin
+    if (dut_b.u_mac_tx.sof) begin            // one pulse per frame start (with its /S/ column)
         starts_total++;
-        if (pz_cur > 32) starts_in_pause++;
+        if (pz_cur > 32 * REPN) starts_in_pause++;
     end
 end
 
 // ---------------- main ----------------
 initial begin
     string mode, fa, fb, oa, ob, cap;
-    int la, lb, n, t_set, t_clr, ok;
+    int la, lb, n, t_set, t_clr, ok, maxc;
+    if (!$value$plusargs("maxcyc=%d", maxc)) maxc = 4000000;
     if (!$value$plusargs("mode=%s", mode)) mode = "frames";
     if ($value$plusargs("fa=%s", fa)) load_frames(fa, txq_a);
     if ($value$plusargs("fb=%s", fb)) load_frames(fb, txq_b);
@@ -330,6 +353,7 @@ initial begin
     if (mode == "frames" || mode == "errors" || mode == "ts") begin
         if (mode == "errors") ch_ba.dflip = 40;
         if (mode == "ts") ch_ba.dflip = 400;
+        if (mode == "ts") ch_ba.dskip = REPN;
         if (mode == "ts") begin
             // A sends XOFF + XON (two PAUSE frames of the MAC) in the middle of its frames;
             // B does not honour them
@@ -341,10 +365,10 @@ initial begin
         end
         tx_go = 1'b1;
         n = 0;
-        while ((txq_a.size() > 0 || txq_b.size() > 0 || a_s_tvalid || b_s_tvalid) && n < 4000000) begin
+        while ((txq_a.size() > 0 || txq_b.size() > 0 || a_s_tvalid || b_s_tvalid) && n < maxc) begin
             @(posedge clk_a); n++;
         end
-        repeat (2000) @(posedge clk_a);
+        repeat (2000 + 40 * REPN) @(posedge clk_a);
         $display("TB_INJ dflip_ba=%0d", ch_ba.n_dflip);
     end else if (mode == "pause") begin
         // B keeps sending filler frames and honours PAUSE
@@ -354,7 +378,7 @@ initial begin
         repeat (500) @(posedge clk_a);
         // 1: XOFF 100 quanta, no refresh; request held longer than the pause
         a_pq = 16'd100; a_pref = 16'd0;
-        a_psend = 1'b1; repeat (3000) @(posedge clk_a); a_psend = 1'b0;
+        a_psend = 1'b1; repeat (3000 * REPN) @(posedge clk_a); a_psend = 1'b0;
         repeat (2000) @(posedge clk_a);
         // 2: XOFF 65535 quanta, XON after 2000 cycles
         a_pq = 16'd65535;
@@ -431,6 +455,8 @@ initial begin
     if (fr_a) $fclose(fr_a);
     if (fr_b) $fclose(fr_b);
     $display("TB_TS tx_a=%0d tx_b=%0d", tx_ts_n_a, tx_ts_n_b);
+    if (USX) $display("TB_USX a_speed=%0d b_speed=%0d a_lp=0x%04x b_lp=0x%04x a_rep=%0d b_rep=%0d",
+                      a_usp, b_usp, a_lpw, b_lpw, a_rep_n, b_rep_n);
     $display("TB_DONE");
     $finish;
 end
