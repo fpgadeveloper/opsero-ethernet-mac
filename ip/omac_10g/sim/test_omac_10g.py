@@ -526,8 +526,12 @@ def t_loop(seed, quick, name):
                                               '%d lane-4 starts' % sum(1 for t in tcap[:m] if t[1])))
     ua = [t for t in ta if t[2] == 1]
     ub = [t for t in tb_ if t[2] == 1]
-    ck(len(ua) == n and len(ub) == n and len(ta) == n + 2, 'one timestamp per frame: A %d user + %d PAUSE, B %d'
-       % (len(ua), len(ta) - len(ua), len(ub)))
+    # A's XOFF waits for a frame boundary; at low speeds the XON request (400 cycles later) can
+    # replace it before it is sent, so one or two PAUSE frames: count them on the wire
+    npz = sum(1 for f in frames if f[0][12:14] == b'\x88\x08')
+    ck(len(ua) == n and len(ub) == n and len(ta) == n + npz and npz in (1, 2),
+       'one timestamp per frame: A %d user + %d PAUSE (%d PAUSE frames on the wire), B %d'
+       % (len(ua), len(ta) - len(ua), npz, len(ub)))
     for lbl, tx, rx, got in (('A->B', ua, rb, ob), ('B->A', ub, ra, oa)):
         k = min(len(rx), len(tx))
         diff = sorted(set(rx[i][0] - tx[i][0] for i in range(k)))
