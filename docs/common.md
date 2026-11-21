@@ -10,11 +10,12 @@ Used by the omac IPs (each IP's `rtl/<ip>.f` lists the ones it needs, package fi
 | `omac_block_lock` | 64B/66B block lock state machine (figure 49-14) with gearbox slip and a slip wait |
 | `omac_ber_mon` | BER monitor (figure 49-15): `THRESH` bad headers per `TIMER_CLKS` window |
 | `omac_rs_fault` | RS link fault detection (figure 46-11) on any number of 4-byte columns per cycle |
-| `omac_pause` | 802.3x PAUSE: receive timer in bit times (speed-independent through `BIT_TIMES_PER_CLK`), XOFF / refresh / XON requests from a level |
+| `omac_pause` | 802.3x PAUSE: receive timer in bit times (speed-independent through `BIT_TIMES_PER_CLK`), XOFF / refresh / XON requests from a level; clock enable `ce` for the timers (omac_10g USXGMII: one enabled cycle = 64 bit times of the link speed) |
 | `omac_pause_frame` | AXI-Stream source of one PAUSE frame (60 bytes, any width) |
 | `omac_async_fifo` | dual-clock FIFO, gray pointers, LUTRAM, first-word fall-through |
 | `omac_sync_bit`, `omac_sync_reset` | level synchroniser (`ASYNC_REG`), reset synchroniser |
 | `omac_cdc_event` | loss-free crossing of event pulses (gray-coded counter per event) |
+| `omac_cdc_word` | crossing of a slowly changing multi-bit value (toggle handshake; the destination always shows a value the source really had) |
 | `omac_axil_stats` | optional AXI4-Lite statistics block (below) |
 
 ## omac_axil_stats register map

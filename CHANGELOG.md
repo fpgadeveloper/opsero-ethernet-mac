@@ -9,6 +9,26 @@ Work in progress; merged to `main` and tagged after hardware validation.
 
 ### Added
 
+- **omac_10g USXGMII** (`USXGMII_EN` = 1; docs/usxgmii.md): one 10.3125 Gb/s lane carries
+  10M/100M/1G/2.5G/5G/10G to a multi-rate PHY. Transmit: the MAC runs with a clock enable (one
+  column per N cycles, `s_axis_tx_tready` one cycle in N) and every 32-bit word is replicated N
+  times (1/2/4/10/100/1000), the copies of the /S/ word with 0xAA in lane 0, the copies of the
+  /T/ word idle. Receive: one word in N, the phase restarted at every /S/ (idle insertion /
+  deletion between frames, /S/ in lane 0 or 4), replica check (`ev_usx_rep_error`, optional
+  strict mode). Auto-negotiation of the 16-bit configuration word in sequence ordered sets
+  (clause 37 figure 37-6 arbitration with the USXGMII changes, programmable link timer, AN off =
+  forced speed); `stat_link_up` follows the PHY's link bit. `ctl_usx_*` / `stat_usx_*` /
+  `ev_usx_*` ports and an optional AXI4-Lite register block (`omac_10g_usx_axil`) laid out for a
+  Linux phylink PCS driver. Timestamp hooks keep their reference plane (the block with the first
+  copy of /S/) at every speed. Protocol details from the public USXGMII multiport specification
+  are parameters (`USX_SOP_FILL`, `USX_AN_OPCODE`, `USX_AN_LSWAP`, `USX_AN_TXFMT`,
+  `USX_IDLE_RESTART`, `USX_LINK_TIMER`) until checked against the single-port specification.
+  `USXGMII_EN` = 0 (default): unchanged, every omac_10g regression output byte-identical.
+  Simulated against an independent behavioural PHY model and IP against IP at all six speeds;
+  not yet on hardware.
+- **common**: `omac_cdc_word` (toggle-handshake crossing of a multi-bit level); clock enable `ce`
+  on `omac_pause` (timers) and `omac_10g_mac_tx` (tied to 1 by omac_40g and by omac_10g without
+  USXGMII).
 - **gt/omac_gt_usp_gty** (UltraScale+ GTY): `omac_gen_gty_quad` (gtwizard preset
   `GTY-10GBASE-R`, set like the GTH quad IP) and `omac_gt_usp_gty_quad`, the GTY twin of
   `omac_gt_usp_gth_quad` (same parameters and ports, serial pins `gty_*`); `omac_ch_of_lane`
@@ -83,6 +103,8 @@ Work in progress; merged to `main` and tagged after hardware validation.
   SyncE + PTP reference design for the quad SFP28 FMC on a ZCU106).
 - omac_mdio on hardware; its Linux driver on a running kernel (compile-tested against AMD
   linux-xlnx 6.12 for arm64 and mainline 6.17).
+- omac_10g USXGMII against a real PHY; the protocol details listed in docs/usxgmii.md "Open
+  protocol items" against the single-port specification.
 
 ## v0.1.0 (2026-11-05)
 

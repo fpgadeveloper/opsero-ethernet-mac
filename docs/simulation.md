@@ -19,7 +19,7 @@ python3 -I ip/omac_mdio/sim/test_omac_mdio.py base fast         # omac_mdio, bot
 make drv-mdio                                                   # omac_mdio bare-metal driver host test
 ```
 
-The full regression takes about 20 minutes on one CPU core. It needs Vivado 2025.x (`xvlog`, `xelab`, `xsim` on the PATH, `VIVADO_SETTINGS` pointing at
+The full regression takes about 35 minutes on one CPU core. It needs Vivado 2025.x (`xvlog`, `xelab`, `xsim` on the PATH, `VIVADO_SETTINGS` pointing at
 `settings64.sh`, or a usual install location), Python 3 (standard library only) and, for
 `mdio_drv`, a host C compiler (`$CC` or `cc`). Build
 products go to `sim/build` (or `$SIM_BUILD`); each testbench is compiled once per configuration
@@ -46,6 +46,61 @@ the Python model:
 
 On hardware the same IPs interoperate with an NVIDIA ConnectX-6 Dx at 10GBASE-R and
 40GBASE-R4 ([](hardware.md)).
+
+## USXGMII
+
+The omac_10g USXGMII option ([](usxgmii.md)) is checked from three independent sides: a
+behavioural PHY model (`tb_usx_phy`, written from the protocol description with its own
+64B/66B, scrambler, CRC, replication and arbitration code), the IP against itself at every
+speed with the wire decoded by the Python model (`omac_ref.parse_capture_usx`), and the
+10GBASE-R tests repeated with `USXGMII_EN` = 1. With `USXGMII_EN` = 0 every pre-existing
+omac_10g test was compared file by file with the IP before USXGMII was added: wire captures,
+received frames and timestamps of all 12 omac_10g tests (43 files) and every `TB_` result line
+are byte-identical.
+
+### Results (2026-11-21)
+
+| Test | Measured |
+|---|---|
+| `usx_speeds` | link at 10G, 1G, 2.5G, 5G, 100M, 10M in turn (6,050-8,080 cycles per change with the 2,000-cycle test link timer); 166 + 166 frames of 60-9,000 bytes (one 9,000-byte frame each way at every speed, 1.6 M cycles for the 10M phase) exact, 20 wrong-FCS frames delivered bad, 19 aborts / underflows bad at the PHY; 65 idle words inserted and 38 deleted by the PHY, 106 LPI words; 0 replication-rule violations, 0 invalid blocks, gaps >= 9 bytes at every speed; block-lock loss: lock lost after 20 cycles, relink after 23k cycles; inconsistent exchange: one restart; PHY link down: AN complete, `stat_link_up` 0; 80 frames offered during a speed change, the 25 sent after it exact, no data outside a frame; every TX timestamp = the PHY's /S/ cycle, every RX timestamp = the PHY's /S/ cycle + 3 (lane-4 starts included) |
+| `usx_corrupt` | 63 corrupted copies in 126 frames -> exactly 63 `ev_usx_rep_error`; strict 0: all frames good; strict 1 (2.5G, 1G, 100M): exactly the 16 / 14 / 5 corrupted frames bad |
+| `usx_forced` | 10G, 2.5G, 1G, 100M with AN off: frames, timestamps, rules; 0 AN events |
+| `usx_antimer` | 1.6 ms link timer: link after 759,667 cycles = 4.86 ms |
+| `usx_loop*` | 10G / 5G / 2.5G / 1G / 100M / 10M: 150 / 80 / 60 / 30 / 10 / 5 frames each way exact (aborts, underflows, cuts bad); Python decoder: 0 copy, alignment or lane errors; gaps min 9 bytes, mean 11.98 / 11.96 / 11.83 / 11.75 / 9.0 (one gap) / 12.0; every TX timestamp on its /S/ line, RX - TX = 3 cycles for every frame both ways; line bit flips counted as replica mismatches (copies) or FCS errors (samples) |
+| `usx_pause1g`, `usx_pause2p5g` | XOFF 100 quanta = 7,994 cycles at 1G (8,000 expected, resolution 10), 3,197 at 2.5G (3,200, resolution 4) |
+| `10g_*_usx` | the 10GBASE-R results unchanged with `USXGMII_EN` = 1 |
+
+### Fault injection (mutation check)
+
+Not part of the regression. Each mutant is one deliberate fault in the RTL, run against
+`usx_speeds`, `usx_corrupt` (quick), `usx_loop2p5g` (quick) and `usx_pause1g`:
+
+| Mutant | Fault | Caught by |
+|---|---|---|
+| `tx_sop_copy` | the copies of the /S/ word keep /S/ | all four (no frame decodes) |
+| `tx_t_copy` | the copies of the /T/ word are identical copies | all four |
+| `tx_first` | the high word of a column is never sent as its own first copy | speeds, corrupt, loop |
+| `tx_half` | low / high word split off by one | all four |
+| `tx_tready` | `s_axis_tx_tready` not gated by the clock enable | all four |
+| `pause_ce` | the PAUSE timer ignores the clock enable | pause1g (800 instead of 8000 cycles) |
+| `rx_rephase` | the sampling phase is not restarted at /S/ | all four |
+| `rx_s_lane4` | a lane-4 /S/ is not kept in lane 4 | speeds, corrupt (receive timestamps / lane flag) |
+| `rx_ts` | a lane-0 /S/ frame takes the time of the wrong column | speeds, corrupt, loop |
+| `rx_check` | replica mismatches not counted | corrupt, loop |
+| `rx_strict` | `ctl_usx_rx_strict` ignored | corrupt |
+| `an_rep25` | 2.5G resolved to replication 2 | speeds, corrupt, loop |
+| `an_ack` | the acknowledge bit never sent | all four (no link) |
+| `an_bytes` | word bytes swapped on transmit | all four (no link) |
+| `an_lockloss` | no auto-negotiation restart on block-lock loss | speeds |
+| `an_consist` | no clause 37 consistency check | speeds (inconsistent PHY step, added for this mutant) |
+| `an_linkbit` | the PHY's link bit ignored | speeds (copper-link-down step) |
+| `top_tsof` | TX timestamp from the MAC column instead of the first /S/ copy | speeds, corrupt, loop |
+| `top_dataok` | MAC data released in the middle of a frame after auto-negotiation | speeds (busy step, added for this mutant) |
+| `rx_drop` | an idle sample in the low half under a lane-4 /S/ is not dropped | not caught: equivalent (the column builder then loses one idle word of the gap instead of another) |
+
+19 of 20 caught; the remaining one changes only which idle word of an inter-packet gap is
+dropped. `an_consist` and `top_dataok` survived the first round and led to the inconsistent-PHY
+and busy steps of `usx_speeds`.
 
 ## Transceiver-level simulation (GT models)
 
@@ -85,6 +140,9 @@ each test takes about two minutes (Vivado 2025.2). Result (v0.2.0-dev), times af
 | `run_tests.py` | the regression |
 | `ip/omac_10g/sim/tb_omac_10g.sv` | two omac_10g back to back, clocks 100 ppm apart, each receiver on the far end's TX clock; TX drivers, RX monitors, wire capture, mode sequences |
 | `ip/omac_10g/sim/tb_gt_chan.sv` | bit-level channel + gearbox model: random 66-bit phase, slip with a 2-24 cycle latency, header / payload error injection (also one per omac_40g lane) |
+| `ip/omac_10g/sim/tb_usx_phy.sv` | **behavioural USXGMII PHY (host side)** written from the protocol description, independent of the RTL: its own 64B/66B encoder / decoder, scrambler, descrambler, CRC-32, replication, de-replication and clause-37-style arbitration; programmable word, full restart or re-signal on a new word, both ordered-set formats, idle insertion / deletion of single 4-byte words, LPI words, replica corruption, wrong FCS; checks every replication rule on the IP's stream and measures the gaps |
+| `ip/omac_10g/sim/tb_omac_10g_usx.sv` | one omac_10g (`USXGMII_EN` = 1, `TS_EN` = 1) against `tb_usx_phy` (PHY -> IP through `tb_gt_chan`, clocks 100 ppm apart); a test is a list of phases (new word / speed, link, frames both ways), with optional lock loss and copper-link-down steps |
+| `ip/omac_10g/sim/tb_usx_axil.sv` | unit test of the optional USXGMII register block `omac_10g_usx_axil` |
 | `ip/omac_40g/sim/tb_omac_40g.sv` | two omac_40g back to back, four lanes each way: block delay per lane (skew), lane permutation, `tb_gt_chan` per lane, every receiver lane on its own recovered clock (the far end's TX clock with a random phase), A and B 100 ppm apart; capture of the four lanes as the receiver sees them |
 | `ip/omac_mdio/sim/tb_omac_mdio.sv` | omac_mdio and three PHY models on one bus (5 ns board delay each way, pull-up); AXI-Lite driver, register mirror, continuous MDC / setup-hold / contention / open-drain checks, the test phases |
 | `ip/omac_mdio/sim/tb_mdio_phy.sv` | behavioural MDIO slave written from clauses 22.2.4.5 and 45.3: preamble / start detection with a minimum preamble per PHY, clause 22 and clause 45 frames (per-MMD address register, post-read-increment), skips other addresses and unsupported clauses, write turnaround check, read data driven 0-300 ns after the rising MDC edge |
@@ -109,6 +167,14 @@ each test takes about two minutes (Vivado 2025.2). Result (v0.2.0-dev), times af
 | `10g_hiber` | `test_omac_10g.py hiber` | 1 bad header per 4000 blocks: no hi_ber; 1 per 150: hi_ber within a window, link down, local / remote fault, lock kept; errors off: hi_ber clears within 2 windows; 20 bad headers in a row: lock lost and re-acquired |
 | `10g_watchdog` | `test_omac_10g.py watchdog` | no lock possible → `gt_rx_reset_req` pulses every `RX_WATCHDOG` cycles; the locked side does not pulse after locking |
 | `10g_ts`, `10g_ts25` | `test_omac_10g.py ts / ts25` | **timestamp hooks** (`TS_EN` = 1, time values = cycle counters of each clock), 400 frames each way at 10G and at 25G: A's 402 transmit timestamps (400 user + 2 PAUSE) against the line of each frame's /S/ block in A's wire capture as decoded by the Python model (exact), `tx_ts_lane4` = the decoded start lane, `tx_ts_user` = 0 exactly for the PAUSE frames; every frame delivered at B / A carries a timestamp = the transmit timestamp of the same frame + 3 cycles (the channel latency, hand-computed from `tb_gt_chan`), the same lane-4 flag, constant on every beat; with aborts, underflows and oversize cuts (A->B, delivered bad), line bit flips (B->A, delivered bad), PAUSE frames consumed at B (no timestamp) and a third of the frames back to back at the minimum gap. Mutations (transmit sample one cycle early; lane-4 frames taking the SFD column's time) are caught |
+| `usx_axil` | `test_omac_10g_usx.py axil` | `omac_10g_usx_axil`: ID, reset values, every register and byte strobe, the AN_RESTART pulse, STATUS against the status inputs, sticky events with write-1-to-clear, the interrupt mask, saturating counters and their clear |
+| `usx_speeds` | `test_omac_10g_usx.py speeds` | omac_10g against the PHY model, auto-negotiation through 10G -> 1G -> 2.5G -> 5G -> 100M -> 10M on the fly (full restart and re-signal, both ordered-set formats): link at each speed, the words exchanged (ours with ack, the PHY's), frames of 60-9000 bytes both ways (at least one 60, 64 and 9000-byte frame per speed, 70 % back to back) exact, wrong FCS from the PHY -> bad, aborts / underflows from the IP -> bad at the PHY; 30 % of the PHY's gaps with 1-3 idle words inserted or deleted (start lane 0 / 4), LPI words in the gaps at 5G; every replication rule on the IP's stream checked by the PHY model (copies, 0xAA fill, idle copies of /T/, gap a multiple of N words, /S/ in lane 0), gaps >= 9 bytes of the link speed; a burst of invalid sync headers after 1G (lock lost, AN restarted, relink); the PHY's copper link down after 5G (AN completes, `stat_usx_link_ok` = `stat_link_up` = 0 with block lock); **every frame's timestamps**: TX = the cycle the PHY saw its /S/ block, RX = the PHY's /S/ cycle + 3, lane-4 flag = the /S/ lane |
+| `usx_corrupt` | `test_omac_10g_usx.py corrupt` | one copy of a data word corrupted in half of the PHY's frames at 2.5G, 2.5G, 1G, 5G, 100M: `ev_usx_rep_error` exactly once per corrupted frame; `ctl_usx_rx_strict` = 0: all frames good and exact; = 1: exactly the corrupted frames bad |
+| `usx_forced` | `test_omac_10g_usx.py forced` | auto-negotiation off at both ends (`ctl_usx_an_enable` = 0, `ctl_usx_speed`): 10G, 2.5G, 1G, 100M with frames, timestamps and the replication rules; no AN events |
+| `usx_antimer` | `test_omac_10g_usx.py antimer` | the default link timer (1.6 ms, `USX_LINK_TIMER` 250000) at 1G: time to link |
+| `usx_loop10g` ... `usx_loop10m` | `test_omac_10g.py loop<speed>` | two omac_10g with `USXGMII_EN` = 1 against each other at each speed (auto-negotiated, both advertising it): A's wire decoded by the Python model with the replication rules (`omac_ref.parse_capture_usx`: copies, fill, /T/ copies, /S/ lane, gap alignment, de-replication, preamble, SFD, FCS), the good frames on the wire = the frames sent, gaps >= 9 bytes and the deficit idle count at the link speed, every TX timestamp = the /S/ line of the capture, RX - TX = 3 cycles for every frame both ways, aborts / underflows / oversize cuts / PAUSE frames / line bit flips (flips counted as replica mismatches or FCS errors) |
+| `usx_pause1g`, `usx_pause2p5g` | `test_omac_10g.py pause_usx1g / 2p5g` | PAUSE over USXGMII: XOFF 100 quanta = 100 x 512 bit times of the link speed (8000 cycles at 1G, 3200 at 2.5G, within one replication period), XON, refresh, honour, frame contents on the de-replicated wire |
+| `10g_*_usx` | `test_omac_10g.py <test> --usx` | `10g_frames`, `10g_errors`, `10g_runt`, `10g_pause10`, `10g_fault`, `10g_hiber`, `10g_watchdog`, `10g_ts` with both IPs at `USXGMII_EN` = 1 (auto-negotiated 10G): the same checks |
 | `40g_units` | `tb_40g_units.sv` | **interop vectors**: alignment markers of lanes 0-3 against 66-bit blocks written down by hand from table 82-3, BIP3 of idle / data / marker blocks worked out by hand from table 82-4, the 2nd and 4th marker of `omac_40g_pcs_tx` (scrambler off) after 16383 idle (BIP3 0x1E) or data (0x19) blocks; marker stall without block loss; lane receivers: AM lock, lane numbers, BIP errors, marker loss; 3000 CRC identity cases |
 | `40g_frames`, `40g_frames_s2` | `test_omac_40g.py frames` | random lane permutation, skew and 66-bit phase per lane, per-lane recovered clocks; 600 frames each way (60-9000 bytes, half back to back) exact; the four lanes as received decoded by the Python model: lane ids, marker period, BIP3/BIP7, deskew, clause 82 blocks, frames, starts in lane 0 only, gaps >= 5 with the deficit idle count (every prefix sum >= 12 n - 7) |
 | `40g_perms` | `test_omac_40g.py perms` | all 24 lane orders in a random order with random skew: relock, lane map and measured skew, 25 frames each (600) exact |
@@ -127,8 +193,9 @@ each test takes about two minutes (Vivado 2025.2). Result (v0.2.0-dev), times af
 
 ## Results
 
-Full regression (`make sim`), 2026-11-21, Vivado 2025.2 xsim, v0.2.0-dev with omac_mdio:
-**PASS, 34 tests, 0 failed, 21 min** (the 31 tests below plus `mdio`, `mdio_fast` and
+Full regression (`make sim`), 2026-11-21, Vivado 2025.2 xsim, v0.2.0-dev with omac_10g USXGMII:
+**PASS, 55 tests, 0 failed, 34 min** (the USXGMII tests are listed in [USXGMII](#usxgmii)).
+Before that, with omac_mdio: PASS, 34 tests, 0 failed, 21 min (the 31 tests below plus `mdio`, `mdio_fast` and
 `mdio_drv`). 2026-11-05 (omac_10g with the timestamp hooks): PASS, 31 tests, 19 min (the 29
 tests of v0.1.0 unchanged, plus `10g_ts` and `10g_ts25`). v0.1.0 (2026-11-03): PASS, 29 tests, 16 min. The omac_10g rows below are
 from the first omac_10g run (counts unchanged since).

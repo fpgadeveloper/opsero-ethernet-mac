@@ -20,7 +20,7 @@ Opsero's reference designs; the designs that use it are listed in
 
 | IP | Standard | User side | Lane(s) | Maturity (v0.1.0) |
 |---|---|---|---|---|
-| [`omac_10g`](docs/omac_10g.md) | 10GBASE-R (25GBASE-R with `SPEED` = 25) | 64-bit AXI-Stream @ 156.25 MHz (390.625 MHz) | 1 x 10.3125 (25.78125) Gb/s | **10GBASE-R hardware-proven** (ZCU106 + ConnectX-6 Dx: link, RoCE v2 traffic at 9.4-9.8 Gb/s, 0 errors); 3.5k LUT, +2.8 ns at 156.25 MHz on xczu7ev-2. 25GBASE-R: simulated, routed at 390.625 MHz on xcku5p-2 (+0.28 ns), not yet on hardware. v0.2.0-dev: optional [timestamp hooks](docs/omac_10g.md#timestamp-hooks) (`TS_EN`, start of frame at the 64B/66B block boundary, both directions, for IEEE 1588), simulated, not yet on hardware |
+| [`omac_10g`](docs/omac_10g.md) | 10GBASE-R (25GBASE-R with `SPEED` = 25) | 64-bit AXI-Stream @ 156.25 MHz (390.625 MHz) | 1 x 10.3125 (25.78125) Gb/s | **10GBASE-R hardware-proven** (ZCU106 + ConnectX-6 Dx: link, RoCE v2 traffic at 9.4-9.8 Gb/s, 0 errors); 3.5k LUT, +2.8 ns at 156.25 MHz on xczu7ev-2. 25GBASE-R: simulated, routed at 390.625 MHz on xcku5p-2 (+0.28 ns), not yet on hardware. v0.2.0-dev: optional [timestamp hooks](docs/omac_10g.md#timestamp-hooks) (`TS_EN`, start of frame at the 64B/66B block boundary, both directions, for IEEE 1588), simulated, not yet on hardware; optional [USXGMII](docs/usxgmii.md) (`USXGMII_EN`: 10M/100M/1G/2.5G/5G/10G to a multi-rate PHY over the same lane, replication + auto-negotiation), simulated against a PHY model and IP against IP, not yet on hardware |
 | [`omac_40g`](docs/omac_40g.md) | 40GBASE-R4 (multi-lane distribution, alignment markers, BIP, deskew, lane reorder) | 256-bit AXI-Stream @ 156.25 MHz | 4 x 10.3125 Gb/s | **hardware-proven** (ZCU106 + ConnectX-6 Dx at 40GBASE-CR4: RoCE v2 at 38.7-39.2 Gb/s payload, PAUSE both ways, 0 FCS / block / BIP errors); 16.4k LUT, +1.57 ns at 156.25 MHz on xczu7ev-2 |
 | `omac_1g` | 1000BASE-X / SGMII | 8-bit | 1 x 1.25 Gb/s | planned, no date |
 | `omac_100g` | 100GBASE-R4 (RS-FEC) | 512-bit | 4 x 25.78125 Gb/s | planned, no date |
@@ -84,6 +84,7 @@ locally):
 | [docs/index.md](docs/index.md) | overview, IP and maturity tables, how to use the cores, bring-up checklist |
 | [docs/interface.md](docs/interface.md) | the shared boundary contract: user side (mandatory), GT side, optional statistics, connecting a consumer, the software contract (no drivers by design) |
 | [docs/omac_10g.md](docs/omac_10g.md) | omac_10g: architecture, bring-up and software (sequence, link-up time, link loss, loopback, PAUSE, debug order), parameters, timing and constraints, verification |
+| [docs/usxgmii.md](docs/usxgmii.md) | omac_10g with `USXGMII_EN` = 1: replication, auto-negotiation, ports and optional registers, Linux phylink mapping, timestamps per speed, open protocol items |
 | [docs/omac_40g.md](docs/omac_40g.md) | omac_40g: architecture, throughput and its known limit, lane order and skew, board placement, bring-up and software (sequence, link-up time, link loss, loopback, PAUSE, debug order), parameters, timing |
 | [docs/gt_usp_gth.md](docs/gt_usp_gth.md) | GTH wrappers (one and four lanes): generator scripts, global synthesis, clock constraints, resets and handshake (software view), gtwizard settings, bit order, RX clocking, board placement (what a design determines for its board) |
 | [docs/omac_mdio.md](docs/omac_mdio.md) | omac_mdio: MDIO master (clause 22 / 45), register map, frames and timing, hold-off, abort, bit-bang, block design integration, level translators, Linux driver + device tree, bare-metal driver |
@@ -100,7 +101,7 @@ locally):
 ```
 ip/<ip>/rtl     the IP (SystemVerilog; <ip>.f = compile order; <ip>_bd.v = IPI wrapper)
 ip/<ip>/sim     the IP's testbenches and test drivers
-ip/<ip>/synth   out-of-context synthesis job lists and synthesis-only tops (make synth / synth40 / synth-mdio)
+ip/<ip>/synth   out-of-context synthesis job lists and synthesis-only tops (make synth / synth-usx / synth40 / synth-mdio)
 ip/omac_mdio/drivers   the MDIO master's Linux MDIO-bus driver and bare-metal driver
 common/         shared blocks: CRC-32, 64B/66B codec + scrambler, block lock, BER monitor,
                 RS link fault, PAUSE, clock crossing, AXI-Lite statistics
@@ -112,7 +113,7 @@ scripts/        helper scripts (IPI wrapper generator, out-of-context synthesis 
 
 ## Tools
 
-Simulation: Vivado 2025.x xsim (`make sim`, about 20 minutes), Python 3 (standard library
+Simulation: Vivado 2025.x xsim (`make sim`, about 35 minutes), Python 3 (standard library
 only) and a host C compiler (the omac_mdio bare-metal driver test). Synthesis: Vivado 2025.x (`make synth`, `make synth40`). Both scripts find Vivado on `PATH`, through
 `VIVADO_SETTINGS`, or in the usual install locations. Documentation: Sphinx with myst-parser and
 sphinx-rtd-theme (`make docs`, `pip install -r docs/requirements.txt`).

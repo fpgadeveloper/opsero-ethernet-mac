@@ -24,7 +24,7 @@ clock) is the design's ([](gt_usp_gth.md#board-placement)).
 
 | IP | Standard | User side | Lanes | Maturity |
 |---|---|---|---|---|
-| [`omac_10g`](omac_10g.md) | 10GBASE-R; 25GBASE-R with `SPEED` = 25 | 64-bit AXI-Stream at 156.25 MHz (25G: 390.625 MHz) | 1 x 10.3125 Gb/s (25G: 1 x 25.78125) | **10GBASE-R: hardware-proven** on a ZCU106 against a ConnectX-6 Dx ([](hardware.md)). 25GBASE-R: simulated, timing closed at 390.625 MHz on xcku5p-2, not yet on hardware (needs a GTY wrapper) |
+| [`omac_10g`](omac_10g.md) | 10GBASE-R; 25GBASE-R with `SPEED` = 25; [USXGMII](usxgmii.md) (10M-10G over one 10.3125 Gb/s lane to a multi-rate PHY) with `USXGMII_EN` = 1 | 64-bit AXI-Stream at 156.25 MHz (25G: 390.625 MHz) | 1 x 10.3125 Gb/s (25G: 1 x 25.78125) | **10GBASE-R: hardware-proven** on a ZCU106 against a ConnectX-6 Dx ([](hardware.md)). 25GBASE-R: simulated, timing closed at 390.625 MHz on xcku5p-2, not yet on hardware (needs a GTY wrapper). USXGMII (v0.2.0-dev): simulated against a PHY model and IP against IP at all six speeds, implemented; not yet on hardware |
 | [`omac_40g`](omac_40g.md) | 40GBASE-R4 (multi-lane distribution, alignment markers, BIP, deskew, lane reorder) | 256-bit AXI-Stream at 156.25 MHz | 4 x 10.3125 Gb/s | **hardware-proven** on a ZCU106 against a ConnectX-6 Dx at 40GBASE-CR4 ([](hardware.md)) |
 | `omac_1g` | 1000BASE-X / SGMII | 8-bit | 1 x 1.25 Gb/s | planned ([](roadmap.md)) |
 | `omac_100g` | 100GBASE-R4 with RS-FEC | 512-bit | 4 x 25.78125 Gb/s | planned ([](roadmap.md)) |
@@ -125,6 +125,7 @@ each IP are on its page.
 
 interface
 omac_10g
+usxgmii
 omac_40g
 gt_usp_gth
 omac_mdio

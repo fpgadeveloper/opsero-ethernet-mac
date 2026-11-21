@@ -1,7 +1,7 @@
 # Resources and timing
 
 Out-of-context results with Vivado 2025.2, measured with the repository's synthesis jobs
-(`make synth`, `make synth-gt`, `make synth40`, `make synth40-gt`, `make synth-mdio`; job lists in
+(`make synth`, `make synth-gt`, `make synth-usx`, `make synth40`, `make synth40-gt`, `make synth-mdio`; job lists in
 `ip/<ip>/synth/jobs*.txt`, runner `scripts/run_synth.sh`). The IP's `clk` and its receive
 clock(s) are constrained at the same period as asynchronous clocks. LUT / FF figures are after
 place and route where the WNS says "routed", else after synthesis. No IP uses block RAM: every
@@ -22,6 +22,26 @@ FIFO is LUTRAM.
 | 2 x omac_10g (`TS_EN` = 1, `TS_W` 16) + omac_gt_usp_gth_quad (`NLANES` = 2, GTH, sites X0Y14 X0Y13, `CH_OF_LANE` 0x01; v0.2.0-dev) | xczu7ev-ffvc1156-2-e | refclk 156.25 MHz, derived TX / RX user clocks | 6,750 | 104 | 4,712 | 0 | **+2.057 ns** routed (WHS +0.010); 2 GTHE4_CHANNEL, 1 GTHE4_COMMON |
 | 4 x omac_10g (`TS_EN` = 1) + omac_gt_usp_gty_quad (`NLANES` = 4, sites X0Y8-X0Y11, `refclk` = `clk1`; v0.2.0-dev) | xcku5p-ffvb676-2-e | refclk 156.25 MHz | 13,753 | 208 | 10,028 | 0 | +2.381 ns (synthesis); 4 GTYE4_CHANNEL, 1 GTYE4_COMMON |
 | 1 x omac_10g (`TS_EN` = 1) + omac_gt_usp_gty_quad (`NLANES` = 1, site X0Y13; v0.2.0-dev) | xcku5p-ffvb676-2-e | refclk 156.25 MHz | 3,570 | 52 | 2,674 | 0 | +2.381 ns (synthesis); 1 GTYE4_CHANNEL, 1 GTYE4_COMMON |
+
+### USXGMII (`USXGMII_EN` = 1, v0.2.0-dev; `make synth-usx`)
+
+The same build with and without USXGMII in one run (Vivado 2025.2, routed out of context, `clk`
+and `gt_rx_clk` at 156.25 MHz as asynchronous clocks):
+
+| Job | Part | LUT | LUTRAM | FF | BRAM | WNS (routed) |
+|---|---|---:|---:|---:|---:|---:|
+| omac_10g, defaults (reference) | xczu7ev-ffvc1156-2-e | 3,455 | 44 | 2,349 | 0 | +2.789 ns (WHS +0.036) |
+| omac_10g, `USXGMII_EN` = 1 | xczu7ev-ffvc1156-2-e | 4,237 | 44 | 2,821 | 0 | **+3.015 ns** (WHS +0.036) |
+| omac_10g, `USXGMII_EN` = 1, `TS_EN` = 1 | xczu7ev-ffvc1156-2-e | 4,375 | 66 | 3,222 | 0 | **+1.938 ns** (WHS +0.034) |
+| omac_10g, defaults (reference) | xcku5p-ffvb676-2-e | 3,452 | 44 | 2,349 | 0 | +2.634 ns (WHS +0.041) |
+| omac_10g, `USXGMII_EN` = 1 | xcku5p-ffvb676-2-e | 4,237 | 44 | 2,821 | 0 | **+2.533 ns** (WHS +0.039) |
+
+USXGMII costs about **+785 LUT and +472 FF** (no RAM; +23 % of the IP, 0.3 % of a ZU7EV's LUTs):
+the replicator and its clock-enable counter, the sampler with its replica check and column
+builder, the auto-negotiation receiver, the arbitration with its link timer and the two
+word crossings. With the timestamp hooks the delta against `TS_EN` = 1 alone is +862 LUT and
++538 FF. Timing at 156.25 MHz keeps 1.9-3.0 ns of slack; `USXGMII_EN` = 0 adds nothing (the
+reference rows are the default jobs above).
 
 v0.2.0-dev rerun of the default job (`TS_EN` = 0): 3,468 LUT, 44 LUTRAM, 2,348 FF, +2.925 ns routed: the
 register count of v0.1.0 exactly (the hooks add nothing when off; the LUT count moves with

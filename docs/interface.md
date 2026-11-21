@@ -171,7 +171,7 @@ more. They are frozen while `clk` is stopped (transceiver in reset or without a 
 
 | Port | Width | Value in reset | Description |
 |---|---|---|---|
-| `stat_link_up` | 1 | 0 | `stat_block_lock && !stat_hi_ber && !stat_local_fault && !stat_remote_fault && gt_tx_ready` (registered). Use it as the link input of the logic behind the MAC and as the one "link" bit of the design's registers. See 1.6.1 for what it does and does not prove |
+| `stat_link_up` | 1 | 0 | `stat_block_lock && !stat_hi_ber && !stat_local_fault && !stat_remote_fault && gt_tx_ready` (registered); omac_10g with `USXGMII_EN` = 1 also needs `stat_usx_link_ok` (auto-negotiation complete with the PHY's link bit set, [](usxgmii.md)). Use it as the link input of the logic behind the MAC and as the one "link" bit of the design's registers. See 1.6.1 for what it does and does not prove |
 | `stat_block_lock` | 1 | 0 | 64B/66B block lock **and** `gt_rx_ready` (40G: all four lanes AM-locked, deskewed and aligned; the per-lane block lock is `stat_lane_block_lock`). A hard-MAC wrapper maps its "aligned" status |
 | `stat_hi_ber` | 1 | 0 | high bit error ratio (clause 49.2.13: 16 or more invalid sync headers within 125 µs at 10G; 40G: 97 within 1.25 ms over the four lanes). Only evaluated while block lock is held: 0 without lock |
 | `stat_local_fault` | 1 | 1 while `gt_rx_ready` = 0, else 0 | the RS link fault state is Local Fault (our receiver is not working: no lock, high BER, or the far end's PHY reports Local Fault), or the transceiver RX is not ready. After `rst` is released it reads 1 until the receiver has locked (our own PCS reports Local Fault until then) |
