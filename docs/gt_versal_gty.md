@@ -175,10 +175,15 @@ the FMCP1 quad (bank 201, `GTY_QUAD_X1Y1`), GBTCLK0 = `MGTREFCLK1` of the same q
 
 ## GTYP
 
-Versal Premium, AI Edge Gen 2 and HBM devices have GTYP quads with the same `gt_quad_base` IP
-and port names. `omac_gen_versal_gty_quad ... GTYP` generates the IP from the `GTYP-10GBASE-R`
-preset with the same changes and checks; the wrapper is the same (set `SIM_DEVICE` for the
-family). Not yet simulated or implemented on a GTYP device.
+Versal Premium, AI Edge Gen 2 and HBM devices have GTYP quads, configured through the same
+`gt_quad_base` IP. `omac_gen_versal_gty_quad ... GTYP` generates the IP from the
+`GTYP-10GBASE-R` preset with the same changes and passes the same checks (RPLL,
+`64B66B_ASYNC`, 64-bit widths, 156.25 MHz output clocks; tried on xcvp1202). The wrapper does
+not take it yet: the GTYP flavour of the IP has a different set of reserved and debug ports
+(for example no `ch<n>_cfokovrd*` / `tstin` / `altclk`, additional `ch<n>_dfehold`,
+`*dapireset*`, `*qpi*`, 32-bit `gpi`), and the wrapper connects every input of the IP
+explicitly. A GTYP variant of the instance (its own tie-off list, selected by a parameter) is
+the remaining work ([](roadmap.md)).
 
 ## Proving the wrapper on hardware
 

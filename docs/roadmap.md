@@ -10,7 +10,7 @@ requests on [GitHub](https://github.com/fpgadeveloper/opsero-ethernet-mac)).
 | **25GBASE-R validation** | `omac_10g` with `SPEED` = 25 is simulated and closes timing at 390.625 MHz; it needs the GTY wrapper and a hardware run against a 25G partner |
 | **`omac_gt_usp_gty`** | UltraScale+ GTY: `omac_gt_usp_gty_quad` (independent 10G lanes) exists (v0.2.0-dev); still to do: a 25.78125 Gb/s configuration for `SPEED` = 25 and a four-lane bonded wrapper for omac_40g |
 | **RS-FEC** | clause 108 RS-FEC for 25GBASE-R and clause 91 for 100GBASE-R4 (many 25G partners and cables expect it) |
-| **Versal** | `omac_gt_versal_gty_quad` (independent 10G lanes on Versal GTY) exists (v0.2.0-dev); still to do: hardware validation, GTYP validation, a 25.78125 Gb/s configuration and a four-lane bonded wrapper for omac_40g |
+| **Versal** | `omac_gt_versal_gty_quad` (independent 10G lanes on Versal GTY) exists (v0.2.0-dev); still to do: hardware validation, the GTYP instance variant (the generator already makes and checks the GTYP IP; its port list differs), a 25.78125 Gb/s configuration and a four-lane bonded wrapper for omac_40g |
 | omac_40g at full line rate for every frame size | a 512-bit or straddled user interface to remove the limit on back-to-back frames 1-7 bytes past a multiple of 32 ([](omac_40g.md#receive-path)) |
 | Smaller omac_40g transmit path | the column packer is 6.6k LUT; a narrower packer or a straddled interface could reduce it |
 
