@@ -290,6 +290,7 @@ initial begin
         strict       = csv_get(s_strict, p, 0);
         phy.go = 1'b0;
         skip_rx = phy.rxq.size(); skip_tx = tx_ts_n;
+        orph0 = phy.n_orphan;                       // from before the speed change on
         if (p == busy) begin
             tframe_t f;
             f.gap = 0; f.abort_beat = -1; f.under_beat = -1;
@@ -327,7 +328,6 @@ initial begin
         skip_tx = tx_ts_n - skip_tx;
         // frames both ways
         c_rep0 = n_rep; c_good0 = cnt[4]; c_bad0 = cnt[5]; c_fcs0 = cnt[6];
-        orph0 = phy.n_orphan;
         viol0 = phy.n_rep_viol; fill0 = phy.n_fill_err; align0 = phy.n_align_err; gap0 = phy.n_gap_err;
         slane0 = phy.n_s_lane_err; dec0 = phy.n_dec_err;
         rx0 = rx_n; prx0 = phy.rxq.size();

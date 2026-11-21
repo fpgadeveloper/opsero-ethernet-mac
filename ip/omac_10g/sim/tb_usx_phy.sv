@@ -326,7 +326,11 @@ always @(posedge tx_clk) begin
             M_CMP: begin
                 tx_word = inconsist ? ((word ^ 16'h0200) | 16'h4000) : (word | 16'h4000);
                 if (abm && hist[0] == 0) begin st = M_EN; if (ack_seen) inconsist = 1'b0; end
-                else begin lt--; if (lt <= 0) begin st = M_IDL; lt = LINK_TIMER; end end
+                else begin
+                    lt--;
+                    // IDLE_DETECT: the speed is known (the DUT may reach link first and send)
+                    if (lt <= 0) begin st = M_IDL; lt = LINK_TIMER; rep = rep_of(word[11:9]); end
+                end
             end
             M_IDL: begin
                 if (abm && hist[0] == 0) st = M_EN;
@@ -490,11 +494,11 @@ task automatic rx_word(logic [3:0] c, logic [31:0] d, int lane, int cyc);
     end else begin
         nhist = 0; idle_run = 0;
     end
-    if (!(st == M_OK || st == M_OFF) || rep != rx_rep) begin
-        // not at link, or the speed has just changed: start over at the next /S/
+    if (!(st == M_OK || st == M_OFF || st == M_IDL) || rep != rx_rep) begin
+        // before idle detect, or the speed has just changed: start over at the next /S/
         in_fr = 1'b0; in_tgrp = 1'b0; seen_t = 1'b0;
         rx_rep = rep;
-        if (!(st == M_OK || st == M_OFF)) return;
+        if (!(st == M_OK || st == M_OFF || st == M_IDL)) return;
     end
     s = c[0] && d[7:0] == K_S;
     t = 1'b0;
