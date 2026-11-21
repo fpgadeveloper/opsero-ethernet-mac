@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 //
 // tb_gt_loop - transceiver-level loop of the per-lane quad wrappers with the
-// vendor's GT simulation models: two omac_10g on omac_gt_usp_gty_quad (GTY = 1)
-// or omac_gt_usp_gth_quad (GTY = 0), NLANES = 2, the serial pins crossed like a
+// vendor's GT simulation models: two omac_10g on omac_gt_versal_gty_quad
+// (VERSAL = 1, Versal GTYE5), omac_gt_usp_gty_quad (GTY = 1) or
+// omac_gt_usp_gth_quad (GTY = 0), NLANES = 2, the serial pins crossed like a
 // cable between the two ports (lane 0 TX -> lane 1 RX, lane 1 TX -> lane 0 RX).
 // Checks: the transceiver comes out of reset from the 156.25 MHz reference
 // clock, both lanes reach block lock and link up through the real 64B/66B
@@ -16,6 +17,7 @@
 
 module tb_gt_loop #(
     parameter bit       GTY        = 1'b1,
+    parameter bit       VERSAL     = 1'b0,
     parameter bit [7:0] CH_OF_LANE = 8'h04,
     parameter int       NFRAMES    = 12,
     parameter int       LINK_US    = 600       // link-up time limit (simulated us)
@@ -40,7 +42,20 @@ wire [64*NL-1:0] tx_data, rx_data;
 wire [3*NL-1:0]  loopback;
 wire             qpll_lock, refclk_mon;
 
-if (GTY) begin : g_gty
+if (VERSAL) begin : g_versal
+    omac_gt_versal_gty_quad #(.NLANES(NL), .CH_OF_LANE(CH_OF_LANE)) dut (
+        .refclk_p(refclk), .refclk_n(~refclk), .freerun_clk(freerun), .reset_all(reset_all),
+        .gty_rxp(rxp), .gty_rxn(rxn), .gty_txp(txp), .gty_txn(txn),
+        .tx_usrclk2(clk), .gt_tx_ready(tx_ready), .gt_tx_hdr(tx_hdr), .gt_tx_data(tx_data),
+        .rx_usrclk2(rx_clk), .gt_rx_ready(rx_ready), .gt_rx_valid(rx_valid), .gt_rx_hdr(rx_hdr),
+        .gt_rx_data(rx_data), .gt_rx_slip(rx_slip), .gt_rx_reset_req(rx_reset_req), .gt_loopback(loopback),
+        .tx_polarity('0), .rx_polarity('0), .tx_diffctrl({NL{5'd25}}), .tx_postcursor('0),
+        .tx_precursor('0), .rx_lpmen({NL{1'b1}}),
+        .drp_addr('0), .drp_di('0), .drp_en('0), .drp_we('0), .drp_do(), .drp_rdy(),
+        .gt_powergood(pg), .qpll_lock(qpll_lock), .rx_cdr_lock(cdr), .rx_reset_busy(), .refclk_mon(refclk_mon),
+        .apb_paddr('0), .apb_psel(1'b0), .apb_penable(1'b0), .apb_pwrite(1'b0), .apb_pwdata('0),
+        .apb_prdata(), .apb_pready(), .apb_pslverr());
+end else if (GTY) begin : g_gty
     omac_gt_usp_gty_quad #(.NLANES(NL), .CH_OF_LANE(CH_OF_LANE)) dut (
         .refclk_p(refclk), .refclk_n(~refclk), .freerun_clk(freerun), .reset_all(reset_all),
         .gty_rxp(rxp), .gty_rxn(rxn), .gty_txp(txp), .gty_txn(txn),
@@ -173,6 +188,55 @@ always @(posedge clk) begin
     end
 end
 
+// ---------------- wire check: bit order on the serial line ----------------
+// A loop between two lanes of one wrapper cannot see a wrong bit order (both ends would
+// reverse alike), so lane 0's transmit pin is decoded here independently: the serial bits
+// (from the transition times, one unit interval = 1 / 10.3125 GHz), the 66-bit block
+// alignment (the one where the two sync header bits always differ), then per IEEE 802.3
+// clause 49: an idle line is control blocks only, sync header "10" in transmission order,
+// and the descrambled payload (x^58 + x^39 + 1, in transmission order) is block type 0x1E
+// sent bit 0 first followed by eight 7-bit idle characters (all zero).
+localparam realtime UI     = 1.0 / 10.3125;   // ns
+localparam int      WBITS  = 66 * 64;
+bit      wire_bits [$];
+bit      cap_on = 1'b0, cap_started = 1'b0, v_last = 1'b0;
+realtime t_last = 0.0;
+always @(txp[0]) begin
+    if (cap_on && wire_bits.size() < WBITS) begin
+        if (!cap_started) begin
+            cap_started = 1'b1;
+        end else begin
+            automatic int n = $rtoi(($realtime - t_last) / UI + 0.5);
+            for (int i = 0; i < n; i++) wire_bits.push_back(v_last);
+        end
+        t_last = $realtime;
+        v_last = txp[0];
+    end
+end
+int wire_off = -1, wire_ctrl = 0, wire_idle_ok = 0, wire_blocks = 0;
+task automatic wire_analyse();
+    automatic int nb = wire_bits.size() / 66 - 1;
+    automatic bit [57:0] sr = '0;
+    for (int off = 0; off < 66 && wire_off < 0; off++) begin
+        automatic bit ok = 1'b1;
+        for (int k = 0; k < nb; k++) if (wire_bits[off + 66*k] == wire_bits[off + 66*k + 1]) ok = 1'b0;
+        if (ok) wire_off = off;
+    end
+    if (wire_off < 0) return;
+    wire_blocks = nb;
+    for (int k = 0; k < nb; k++) begin
+        automatic int    b0 = wire_off + 66*k;
+        automatic bit [63:0] pl;
+        if (wire_bits[b0] == 1'b1 && wire_bits[b0 + 1] == 1'b0) wire_ctrl++;
+        for (int j = 0; j < 64; j++) begin
+            automatic bit sb = wire_bits[b0 + 2 + j];
+            pl[j] = sb ^ sr[38] ^ sr[57];
+            sr = {sr[56:0], sb};
+        end
+        if (k >= 1 && pl == 64'h1E) wire_idle_ok++;
+    end
+endtask
+
 // ---------------- sequence ----------------
 initial begin
     automatic time t0;
@@ -203,6 +267,18 @@ initial begin
         $finish;
     end
     repeat (200) @(posedge clk);
+    // idle line: capture lane 0's serial transmit stream and decode it
+    cap_on = 1'b1;
+    wait (wire_bits.size() >= WBITS);
+    cap_on = 1'b0;
+    wire_analyse();
+    begin
+        automatic int fd = $fopen("wire_lane0.txt", "w");
+        foreach (wire_bits[i]) $fwrite(fd, "%0d", wire_bits[i]);
+        $fclose(fd);
+    end
+    $display("TB_WIRE bits=%0d block_offset=%0d blocks=%0d control_10=%0d idle_payload_ok=%0d",
+             wire_bits.size(), wire_off, wire_blocks, wire_ctrl, wire_idle_ok);
     t0 = $time;
     tx_go = '1;
     fork
@@ -214,7 +290,8 @@ initial begin
     $display("TB_FRAMES rx0=%0d rx1=%0d err0=%0d err1=%0d fcs=%0d bad_blocks=%0d us=%0d",
              rx_frames[0], rx_frames[1], rx_errors[0], rx_errors[1], fcs_err, bad_blocks, ($time - t0) / 1000);
     $display("TB_RESULT pass=%0d", (rx_frames[0] == NFRAMES) && (rx_frames[1] == NFRAMES) &&
-             (rx_errors[0] == 0) && (rx_errors[1] == 0) && (fcs_err == 0) && (bad_blocks == 0) && (&link_up));
+             (rx_errors[0] == 0) && (rx_errors[1] == 0) && (fcs_err == 0) && (bad_blocks == 0) && (&link_up) &&
+             (wire_off >= 0) && (wire_ctrl == wire_blocks) && (wire_idle_ok == wire_blocks - 1));
     $finish;
 end
 

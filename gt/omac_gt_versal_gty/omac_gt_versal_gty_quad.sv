@@ -23,6 +23,8 @@
 //     shared PLL), so a lane without signal never disturbs the others;
 //     gt_rx_ready[l] is per lane. A lane whose receiver does not report
 //     MSTRESETDONE within DONE_HIGH_CYCLES restarts its datapath by itself.
+//   * bit order: the Versal gearbox sends bit 0 of TXDATA / TXHEADER first, i.e. in
+//     IEEE 802.3 order: no reversal (BIT_REVERSE = 0, unlike the UltraScale+ wrappers).
 //   * per-lane loopback, polarity and transmit driver settings (Versal GTY
 //     codes; TX_MAINCURSOR as a parameter).
 //   * TX: one user clock for all lanes (the master lane's TXOUTCLK =
@@ -50,7 +52,7 @@
 
 module omac_gt_versal_gty_quad #(
     parameter int       NLANES           = 2,          // lanes (1-4, one quad)
-    parameter bit       BIT_REVERSE      = 1'b1,
+    parameter bit       BIT_REVERSE      = 1'b0,       // the Versal gearbox sends bit 0 first (see the docs)
     parameter bit [7:0] CH_OF_LANE       = 8'hE4,      // lane 3..0 -> quad channel 3..0
     parameter bit [6:0] TX_MAINCURSOR    = 7'd77,      // TXMAINCURSOR of every lane
     parameter int       RST_CYCLES       = 32,         // freerun_clk cycles of a master / datapath reset pulse
@@ -232,7 +234,8 @@ assign gt_tx_ready = tx_done && txact_s;
 wire  [N-1:0] lane_rdy, lane_busy;
 for (genvar l = 0; l < N; l++) begin : g_lane
     localparam int C = CH_OF_LANE[2*l +: 2];
-    // data, bit order (see the documentation: the gearbox sends the MSB first)
+    // data, bit order: the Versal GTY gearbox sends TXDATA / TXHEADER bit 0 first (IEEE
+    // order, unlike the UltraScale+ gearbox); BIT_REVERSE = 1 would reverse as on UltraScale+
     for (genvar i = 0; i < 64; i++) begin : g_bits
         assign txdata_c[128*C + i]  = BIT_REVERSE ? gt_tx_data[64*l + 63 - i] : gt_tx_data[64*l + i];
         assign gt_rx_data[64*l + i] = BIT_REVERSE ? rxdata_c[128*C + 63 - i]  : rxdata_c[128*C + i];
