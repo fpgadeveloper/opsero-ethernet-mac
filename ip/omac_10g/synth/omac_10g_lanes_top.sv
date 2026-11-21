@@ -19,8 +19,7 @@
 module omac_10g_lanes_top #(
     parameter int       NLANES     = 2,
     parameter bit       GT_GTY     = 1'b1,
-    parameter bit [7:0] CH_OF_LANE = 8'h04,      // lanes 1, 0 -> channels 1, 0
-    parameter bit       REFCLK_SEL = 1'b0
+    parameter bit [7:0] CH_OF_LANE = 8'h04       // lanes 1, 0 -> channels 1, 0
 ) (
     input  wire logic                  refclk_p,
     input  wire logic                  refclk_n,
@@ -66,7 +65,7 @@ wire [64*NLANES-1:0]  tx_data, rx_data;
 wire [3*NLANES-1:0]   loopback;
 
 if (GT_GTY) begin : g_gty
-    omac_gt_usp_gty_quad #(.NLANES(NLANES), .CH_OF_LANE(CH_OF_LANE), .REFCLK_SEL(REFCLK_SEL)) u_gt (
+    omac_gt_usp_gty_quad #(.NLANES(NLANES), .CH_OF_LANE(CH_OF_LANE)) u_gt (
         .refclk_p(refclk_p), .refclk_n(refclk_n), .freerun_clk(freerun_clk), .reset_all(reset_all),
         .gty_rxp(gt_rxp), .gty_rxn(gt_rxn), .gty_txp(gt_txp), .gty_txn(gt_txn),
         .tx_usrclk2(clk), .gt_tx_ready(tx_ready), .gt_tx_hdr(tx_hdr), .gt_tx_data(tx_data),
@@ -77,7 +76,7 @@ if (GT_GTY) begin : g_gty
         .drp_addr(drp_addr), .drp_di(drp_di), .drp_en(drp_en), .drp_we(drp_we), .drp_do(drp_do), .drp_rdy(drp_rdy),
         .gt_powergood(), .qpll_lock(qpll_lock), .rx_cdr_lock(), .rx_reset_busy(), .refclk_mon(refclk_mon));
 end else begin : g_gth
-    omac_gt_usp_gth_quad #(.NLANES(NLANES), .CH_OF_LANE(CH_OF_LANE), .REFCLK_SEL(REFCLK_SEL)) u_gt (
+    omac_gt_usp_gth_quad #(.NLANES(NLANES), .CH_OF_LANE(CH_OF_LANE)) u_gt (
         .refclk_p(refclk_p), .refclk_n(refclk_n), .freerun_clk(freerun_clk), .reset_all(reset_all),
         .gth_rxp(gt_rxp), .gth_rxn(gt_rxn), .gth_txp(gt_txp), .gth_txn(gt_txn),
         .tx_usrclk2(clk), .gt_tx_ready(tx_ready), .gt_tx_hdr(tx_hdr), .gt_tx_data(tx_data),

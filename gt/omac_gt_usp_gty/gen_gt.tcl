@@ -14,8 +14,8 @@
 # `channels`: the board's GT channel sites in lane order (lane 0 first, one to
 # four sites of one quad), e.g. {X0Y12 X0Y13}; the first one is the master (its
 # TXOUTCLK makes the shared TX user clock). `refclk`: clk0 (default) or clk1 =
-# MGTREFCLK0 / MGTREFCLK1 of the master's quad (omac_gt_usp_gty_quad REFCLK_SEL
-# must match). Every RX user clock is made per channel in the wrapper
+# MGTREFCLK0 / MGTREFCLK1 of the master's quad (the IP's port is gtrefclk00_in
+# either way: the wrapper does not change). Every RX user clock is made per channel in the wrapper
 # (LOCATE_RX_USER_CLOCKING EXAMPLE_DESIGN). Defaults: sites X0Y12 X0Y13 (an
 # example pair of an xcku5p quad, only so the repository's own jobs run: a
 # design always passes its own sites), free-running clock 100 MHz, module name

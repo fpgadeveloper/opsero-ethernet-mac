@@ -32,8 +32,8 @@
 # per-lane RX resets of omac_gt_usp_gth_quad) and the DRP ports, on one to four
 # channels of one quad (omac_gt_usp_gth_quad NLANES = the number of sites given;
 # the other channels of the quad are not instantiated). `refclk` (clk0 default,
-# or clk1) selects MGTREFCLK0 or MGTREFCLK1 of the master's quad; the wrapper's
-# REFCLK_SEL must match.
+# or clk1) selects MGTREFCLK0 or MGTREFCLK1 of the master's quad (the IP's port is
+# gtrefclk00_in either way: the wrapper does not change).
 #
 # Settings (checked against the generated IP, Vivado 2025.2, gtwizard_ultrascale 1.7):
 #   preset GTH-10GBASE-R: line rate 10.3125 Gb/s, QPLL0 (FBDIV 66, REFCLK_DIV 1),

@@ -34,8 +34,8 @@
 //     site order inside the IP: with sites X0Y12-X0Y15, X0Y12 = 0 ... X0Y15 = 3;
 //     with two sites X0Y13 and X0Y14, X0Y13 = 0 and X0Y14 = 1); the default is
 //     the four-lane _x4 example (X0Y14 X0Y13 X0Y15 X0Y12).
-//   * reference clock: MGTREFCLK0 (REFCLK_SEL = 0) or MGTREFCLK1 (1) of the
-//     quad; it must match the generator's `refclk` (clk0 / clk1).
+//   * reference clock: MGTREFCLK0 or MGTREFCLK1 of the quad (the generator's
+//     `refclk`; the wrapper is the same for both).
 //   * status: qpll_lock, per-lane rx_cdr_lock and rx_reset_busy.
 //   * refclk_mon: the reference clock / 8 (IBUFDS_GTE4 ODIV2 -> BUFG_GT), running
 //     whenever the reference clock does (independent of every GT reset), for a
@@ -57,7 +57,6 @@ module omac_gt_usp_gty_quad #(
     parameter int       NLANES           = 4,          // channels in the IP (1-4, one quad)
     parameter bit       BIT_REVERSE      = 1'b1,
     parameter bit [7:0] CH_OF_LANE       = {2'd0, 2'd3, 2'd1, 2'd2},   // lane 3..0 -> channel index
-    parameter bit       REFCLK_SEL       = 1'b0,       // 0: MGTREFCLK0, 1: MGTREFCLK1 (generator `refclk`)
     parameter int       RST_CYCLES       = 32,         // freerun_clk cycles of RXPMARESET
     parameter int       DONE_LOW_CYCLES  = 4096,       // wait for RXRESETDONE to fall
     parameter int       DONE_HIGH_CYCLES = 1048576     // wait for RXRESETDONE to rise (10 ms at 100 MHz)
@@ -245,71 +244,69 @@ always_ff @(posedge freerun_clk) begin
     rx_reset_busy <= lane_busy;
 end
 
-// the gtwizard instance: every port but the reference clock input (MGTREFCLK0 or 1)
-`define OMAC_GTY_QUAD_PORTS \
-    .gtwiz_userclk_tx_reset_in          (~(&txprgdivresetdone && &txpmaresetdone)), \
-    .gtwiz_userclk_tx_srcclk_out        (), \
-    .gtwiz_userclk_tx_usrclk_out        (), \
-    .gtwiz_userclk_tx_usrclk2_out       (tx_usrclk2), \
-    .gtwiz_userclk_tx_active_out        (tx_active), \
-    .gtwiz_userclk_rx_active_in         (&rx_active_c), \
-    .gtwiz_reset_clk_freerun_in         (freerun_clk), \
-    .gtwiz_reset_all_in                 (reset_all), \
-    .gtwiz_reset_tx_pll_and_datapath_in (1'b0), \
-    .gtwiz_reset_tx_datapath_in         (1'b0), \
-    .gtwiz_reset_rx_pll_and_datapath_in (1'b0), \
-    .gtwiz_reset_rx_datapath_in         (1'b0), \
-    .gtwiz_reset_rx_cdr_stable_out      (), \
-    .gtwiz_reset_tx_done_out            (tx_done), \
-    .gtwiz_reset_rx_done_out            (rx_done), \
-    .gtwiz_userdata_tx_in               (txdata_c), \
-    .gtwiz_userdata_rx_out              (rxdata_c), \
-    .qpll0lock_out                      (qlock), \
-    .qpll0outclk_out                    (), \
-    .qpll0outrefclk_out                 (), \
-    .drpaddr_in                         (drpaddr_c), \
-    .drpclk_in                          ({N{freerun_clk}}), \
-    .drpdi_in                           (drpdi_c), \
-    .drpen_in                           (drpen_c), \
-    .drpwe_in                           (drpwe_c), \
-    .gtyrxn_in                          (rxn_c), \
-    .gtyrxp_in                          (rxp_c), \
-    .loopback_in                        (lb_c), \
-    .rxgearboxslip_in                   (rxslip_c), \
-    .rxlpmen_in                         (lpm_c), \
-    .rxpmareset_in                      (pmareset_c), \
-    .rxpolarity_in                      (rxpol_c), \
-    .rxusrclk_in                        (rxusrclk_c), \
-    .rxusrclk2_in                       (rxusrclk2_c), \
-    .txdiffctrl_in                      (diff_c), \
-    .txheader_in                        (txheader_c), \
-    .txpolarity_in                      (txpol_c), \
-    .txpostcursor_in                    (post_c), \
-    .txprecursor_in                     (pre_c), \
-    .txsequence_in                      ({7*N{1'b0}}), \
-    .drpdo_out                          (drpdo_c), \
-    .drprdy_out                         (drprdy_c), \
-    .gtytxn_out                         (txn_c), \
-    .gtytxp_out                         (txp_c), \
-    .gtpowergood_out                    (pg_c), \
-    .rxcdrlock_out                      (rxcdrlock_c), \
-    .rxdatavalid_out                    (rxdatavalid_c), \
-    .rxheader_out                       (rxheader_c), \
-    .rxheadervalid_out                  (rxheadervalid_c), \
-    .rxoutclk_out                       (rxoutclk_c), \
-    .rxpmaresetdone_out                 (rxpmaresetdone), \
-    .rxprgdivresetdone_out              (rxprgdivresetdone), \
-    .rxresetdone_out                    (rxresetdone_c), \
-    .rxstartofseq_out                   (), \
-    .txpmaresetdone_out                 (txpmaresetdone), \
-    .txprgdivresetdone_out              (txprgdivresetdone)
-
-if (REFCLK_SEL == 1'b0) begin : g_refclk0
-    omac_gty_quad u_gt (`OMAC_GTY_QUAD_PORTS, .gtrefclk00_in(refclk));
-end else begin : g_refclk1
-    omac_gty_quad u_gt (`OMAC_GTY_QUAD_PORTS, .gtrefclk01_in(refclk));
-end
-`undef OMAC_GTY_QUAD_PORTS
+// the gtwizard instance. The reference clock always enters on gtrefclk00_in: with
+// refclk = clk1 the generator names MGTREFCLK1 as the source and the IP still exposes
+// gtrefclk00_in (QPLL0's first reference input); the reference clock buffer sits on the
+// pin of the board's constraint, MGTREFCLK0 or MGTREFCLK1 of the quad.
+omac_gty_quad u_gt (
+    .gtwiz_userclk_tx_reset_in          (~(&txprgdivresetdone && &txpmaresetdone)),
+    .gtwiz_userclk_tx_srcclk_out        (),
+    .gtwiz_userclk_tx_usrclk_out        (),
+    .gtwiz_userclk_tx_usrclk2_out       (tx_usrclk2),
+    .gtwiz_userclk_tx_active_out        (tx_active),
+    .gtwiz_userclk_rx_active_in         (&rx_active_c),
+    .gtwiz_reset_clk_freerun_in         (freerun_clk),
+    .gtwiz_reset_all_in                 (reset_all),
+    .gtwiz_reset_tx_pll_and_datapath_in (1'b0),
+    .gtwiz_reset_tx_datapath_in         (1'b0),
+    .gtwiz_reset_rx_pll_and_datapath_in (1'b0),
+    .gtwiz_reset_rx_datapath_in         (1'b0),
+    .gtwiz_reset_rx_cdr_stable_out      (),
+    .gtwiz_reset_tx_done_out            (tx_done),
+    .gtwiz_reset_rx_done_out            (rx_done),
+    .gtwiz_userdata_tx_in               (txdata_c),
+    .gtwiz_userdata_rx_out              (rxdata_c),
+    .qpll0lock_out                      (qlock),
+    .qpll0outclk_out                    (),
+    .qpll0outrefclk_out                 (),
+    .drpaddr_in                         (drpaddr_c),
+    .drpclk_in                          ({N{freerun_clk}}),
+    .drpdi_in                           (drpdi_c),
+    .drpen_in                           (drpen_c),
+    .drpwe_in                           (drpwe_c),
+    .gtyrxn_in                          (rxn_c),
+    .gtyrxp_in                          (rxp_c),
+    .loopback_in                        (lb_c),
+    .rxgearboxslip_in                   (rxslip_c),
+    .rxlpmen_in                         (lpm_c),
+    .rxpmareset_in                      (pmareset_c),
+    .rxpolarity_in                      (rxpol_c),
+    .rxusrclk_in                        (rxusrclk_c),
+    .rxusrclk2_in                       (rxusrclk2_c),
+    .txdiffctrl_in                      (diff_c),
+    .txheader_in                        (txheader_c),
+    .txpolarity_in                      (txpol_c),
+    .txpostcursor_in                    (post_c),
+    .txprecursor_in                     (pre_c),
+    .txsequence_in                      ({7*N{1'b0}}),
+    .drpdo_out                          (drpdo_c),
+    .drprdy_out                         (drprdy_c),
+    .gtytxn_out                         (txn_c),
+    .gtytxp_out                         (txp_c),
+    .gtpowergood_out                    (pg_c),
+    .rxcdrlock_out                      (rxcdrlock_c),
+    .rxdatavalid_out                    (rxdatavalid_c),
+    .rxheader_out                       (rxheader_c),
+    .rxheadervalid_out                  (rxheadervalid_c),
+    .rxoutclk_out                       (rxoutclk_c),
+    .rxpmaresetdone_out                 (rxpmaresetdone),
+    .rxprgdivresetdone_out              (rxprgdivresetdone),
+    .rxresetdone_out                    (rxresetdone_c),
+    .rxstartofseq_out                   (),
+    .txpmaresetdone_out                 (txpmaresetdone),
+    .txprgdivresetdone_out              (txprgdivresetdone),
+    .gtrefclk00_in                      (refclk)
+);
 
 endmodule
 

@@ -20,7 +20,7 @@
 # "gtq <gth|gty> <clk0|clk1> <site> ..." jobs (omac_10g, top omac_10g_lanes_top): one to four
 # channel sites of one quad in lane order -> omac_gen_gth_quad / omac_gen_gty_quad with
 # omac_gt_usp_gth_quad / omac_gt_usp_gty_quad (independent omac_10g lanes); the generics
-# NLANES, GT_GTY, CH_OF_LANE and REFCLK_SEL follow from the sites; clocks as for "gtquad".
+# NLANES, GT_GTY and CH_OF_LANE follow from the sites; clocks as for "gtquad".
 # Results: <out_dir>/results.csv (appended), <out_dir>/<name>_*.rpt.
 #
 # Copyright (c) 2026 Opsero Electronic Design Inc.
@@ -136,7 +136,7 @@ foreach line $lines {
                 }
                 set gtw [file join omac_gt_usp_$gtfam omac_gt_usp_${gtfam}_quad.sv]
                 lappend gens NLANES=[llength $sites] GT_GTY=[expr {$gtfam eq "gty"}] \
-                    CH_OF_LANE=[omac_ch_of_lane $sites] REFCLK_SEL=[expr {$rclk eq "clk1"}]
+                    CH_OF_LANE=[omac_ch_of_lane $sites]
             } elseif {$extra eq "gtquad"} {
                 set ip [omac_gen_gth_quad $ipd {X0Y14 X0Y13 X0Y15 X0Y12} 100 omac_gth_quad]
                 set gtw omac_gt_usp_gth_quad.sv

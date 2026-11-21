@@ -15,8 +15,8 @@ Work in progress; merged to `main` and tagged after hardware validation.
   computes `CH_OF_LANE` from a site list. Simulated with the GT models (two lanes crossed,
   link-up and frames both ways, `sim/gt`), routed out of context with two `omac_10g` on xcku5p.
 - **omac_gt_usp_gth_quad / omac_gen_gth_quad**: `NLANES` (one to four channels of one quad, the
-  others not instantiated; the generator checks that the sites share a quad), `REFCLK_SEL` /
-  `refclk` (`MGTREFCLK0` or `MGTREFCLK1` of the quad), per-lane DRP ports on `freerun_clk` (tie
+  others not instantiated; the generator checks that the sites share a quad), generator
+  `refclk` (`MGTREFCLK0` or `MGTREFCLK1` of the quad; the wrapper is the same for both), per-lane DRP ports on `freerun_clk` (tie
   `drp_en` / `drp_we` to 0 when unused: a design written for the earlier port list that leaves
   them unconnected gets them tied to 0 by synthesis, with warnings). The defaults keep the
   four-lane behaviour.

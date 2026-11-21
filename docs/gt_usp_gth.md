@@ -251,10 +251,12 @@ the IP numbers X0Y13 = 0 and X0Y14 = 1, so `CH_OF_LANE` = `8'h01`; `omac_ch_of_l
 elaboration. The defaults (`NLANES` = 4, `CH_OF_LANE` = `{2'd0, 2'd3, 2'd1, 2'd2}`) keep the
 four-lane behaviour of earlier versions.
 
-**Reference clock (`REFCLK_SEL`).** The generators take `refclk` = `clk0` (default) or `clk1`:
-QPLL0 of the quad runs from its `MGTREFCLK0` or `MGTREFCLK1` input, and the wrapper's
-`REFCLK_SEL` (0 / 1) must match (it connects the reference clock buffer to `GTREFCLK00` or
-`GTREFCLK01`). With `clk1` the generator names the source for every channel, as the gtwizard
+**Reference clock (`refclk`).** The generators take `refclk` = `clk0` (default) or `clk1`:
+QPLL0 of the quad runs from its `MGTREFCLK0` or `MGTREFCLK1` input. The IP's reference clock
+port is `gtrefclk00_in` either way, so the wrapper is the same; the reference clock buffer
+lands on the pin given in the design's constraints. (The `clk1` IP is generated and
+synthesised by the repository's jobs; a placed design on an `MGTREFCLK1` pin is not yet
+part of them.) With `clk1` the generator names the source for every channel, as the gtwizard
 requires for QPLL0 (with `clk0` it names the master channel only, the gtwizard's default for
 the rest). A reference clock of a neighbouring quad (north / south routing) is not supported.
 
