@@ -212,7 +212,7 @@ def t_speeds(seed, quick):
         fa_all.append(fa)
         fb_all.append(fb)
     pargs += ['speeds=' + ','.join(map(str, speeds)), 'an=1', 'stress=30,30,30,30,30,30', 'lpi=0,0,0,30,0,0',
-              'txfmt=0,1,0,1,0,1', 'resignal=0,0,1,0,1,0', 'lockloss=1', 'lpdown=3',
+              'txfmt=0,1,0,1,0,1', 'resignal=0,0,1,0,1,0', 'lockloss=1', 'lpdown=3', 'inconsist=2',
               'oa=@oa.txt', 'ra=@ra.txt', 'ta=@ta.txt', 'pr=@pr.txt', 'ps=@ps.txt']
     out, log, d = run(tag, {}, pargs, seed)
     print('   ', out.replace('\n', '\n    '))
@@ -228,6 +228,9 @@ def t_speeds(seed, quick):
        'block lock lost (after %s cycles), AN restarted (DUT starts %s -> %s), relink at 1G after %s cycles'
        % (lk[0]['lost_after'] if lk else '?', ph[1]['an_starts'] if len(ph) > 1 else '?',
           lk[0]['an_starts'] if lk else '?', lk[0]['relink'] if lk else '?'))
+    ck(len(ph) > 2 and ph[2]['an_starts'] - lk[0]['an_starts'] >= 2 if lk and len(ph) > 2 else False,
+       'inconsistent exchange at 2.5G (acknowledged word with another speed): the DUT restarts (%s AN starts) and '
+       'links at the offered speed' % ((ph[2]['an_starts'] - lk[0]['an_starts']) if lk and len(ph) > 2 else '?'))
     ld = S.tb_values(out, 'LPDOWN')
     ck(bool(ld) and ld[0]['an_cpl'] == 1 and ld[0]['lp_word'] & 0x8000 == 0 and ld[0]['usx_ok'] == 0 and
        ld[0]['link'] == 0 and ld[0]['lock'] == 1,

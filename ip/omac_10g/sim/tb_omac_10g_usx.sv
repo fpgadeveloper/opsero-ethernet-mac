@@ -27,6 +27,8 @@
 //   +lpdown=<p>           after phase p: the PHY announces its copper link down
 //                         (word bit 15 = 0); the DUT must complete AN with the
 //                         link down (TB_LPDOWN)
+//   +inconsist=<p>        phase p: the PHY's first exchange is inconsistent (the
+//                         acknowledged word has another speed): the DUT must restart
 //   +lt=<n>               the DUT's link timer through ctl_usx_link_timer (0 = parameter)
 // Results: TB_PH (link per phase), TB_PE (phase end: counts), TB_DONE.
 //
@@ -237,7 +239,7 @@ endtask
 // ---------------- main ----------------
 initial begin
     string sp, s_stress, s_lpi, s_cor, s_strict, s_fmt, s_resig, fn;
-    int nph, an, lockloss, lpdown, code, t, n_exp_dut, n_exp_phy, rx0, prx0, lt_arg;
+    int nph, an, lockloss, lpdown, inc, code, t, n_exp_dut, n_exp_phy, rx0, prx0, lt_arg;
     int c_rep0, c_good0, c_bad0, c_fcs0, viol0, fill0, align0, gap0, slane0, dec0;
     tframe_t pf [$];
     if (!$value$plusargs("speeds=%s", sp)) sp = "3";
@@ -250,6 +252,7 @@ initial begin
     if (!$value$plusargs("resignal=%s", s_resig)) s_resig = "";
     if (!$value$plusargs("lockloss=%d", lockloss)) lockloss = -1;
     if (!$value$plusargs("lpdown=%d", lpdown)) lpdown = -1;
+    if (!$value$plusargs("inconsist=%d", inc)) inc = -1;
     if (!$value$plusargs("lt=%d", lt_arg)) lt_arg = 0;
     if ($value$plusargs("oa=%s", fn)) fo = $fopen(fn, "w");
     if ($value$plusargs("ra=%s", fn)) fr = $fopen(fn, "w");
@@ -282,6 +285,7 @@ initial begin
         if (p > 0) begin
             if (an) begin
                 phy.word = 16'h9001 | (16'(code) << 9);
+                phy.inconsist = (p == inc);
                 phy.restart_req = 1'b1;
             end else begin
                 fspeed = 3'(code);

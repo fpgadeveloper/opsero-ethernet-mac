@@ -34,7 +34,9 @@
 // `word` (bit 14 added in acknowledge), restart on `restart_req` (a new word:
 // the whole exchange again, or with `resignal` = 1 straight from link-ok back
 // to ability detect with the new word), restart when the DUT sends words again
-// while at link. `an_en` = 0: no auto-negotiation, data at `force_rep`.
+// while at link. `inconsist` = 1: in the next exchange the acknowledged word
+// carries another speed than the ability word (clause 37 consistency check),
+// until the DUT restarts. `an_en` = 0: no auto-negotiation, data at `force_rep`.
 //
 // Copyright (c) 2026 Opsero Electronic Design Inc.
 
@@ -70,6 +72,7 @@ int          lpi       = 0;
 int          corrupt   = 0;
 int          gapmax    = 3;
 bit          go        = 1'b1;          // send frames (else only idles at link)
+bit          inconsist = 1'b0;          // one exchange: acknowledge with another speed than offered
 
 // ---------------- results ----------------
 int  n_ins = 0, n_del = 0, n_lpi = 0, n_corrupt = 0, n_enc_err = 0;
@@ -286,6 +289,7 @@ wire         idm  = idle_run >= 3;
 localparam int M_EN = 0, M_RST = 1, M_AB = 2, M_ACK = 3, M_CMP = 4, M_IDL = 5, M_OK = 6, M_OFF = 7;
 int          lt = 0;
 logic [15:0] ab_word = '0, tx_word = '0;
+bit          ack_seen = 1'b0;
 
 always @(posedge tx_clk) begin
     if (!an_en) begin
@@ -299,29 +303,36 @@ always @(posedge tx_clk) begin
             link = 1'b0;
         end
         case (st)
-            M_EN:  begin st = M_RST; lt = LINK_TIMER; link = 1'b0; n_an_start++; end
+            M_EN:  begin st = M_RST; lt = LINK_TIMER; link = 1'b0; n_an_start++; ack_seen = 1'b0; end
             M_RST: begin tx_word = '0; lt--; if (lt <= 0) st = M_AB; end
             M_AB:  begin
                 tx_word = word & 16'hBFFF;
                 if (abm && hist[0] != 0) begin ab_word = hist[0]; st = M_ACK; end
             end
             M_ACK: begin
-                tx_word = word | 16'h4000;
+                tx_word = inconsist ? ((word ^ 16'h0200) | 16'h4000) : (word | 16'h4000);
+                if (nhist > 0 && hist[0][14]) ack_seen = 1'b1;      // the DUT acknowledges our ability
                 if (ackm) begin
                     if (((hist[0] ^ ab_word) & 16'hBFFF) == 0) begin st = M_CMP; lt = LINK_TIMER; dut_word = hist[0]; end
                     else st = M_EN;
-                end else if (abm && hist[0] == 0) st = M_EN;
+                end else if (abm && hist[0] == 0) begin
+                    st = M_EN;
+                    // the DUT restarted after it had seen the inconsistent word: done
+                    if (ack_seen) inconsist = 1'b0;
+                end
             end
             M_CMP: begin
-                tx_word = word | 16'h4000;
-                if (abm && hist[0] == 0) st = M_EN;
+                tx_word = inconsist ? ((word ^ 16'h0200) | 16'h4000) : (word | 16'h4000);
+                if (abm && hist[0] == 0) begin st = M_EN; if (ack_seen) inconsist = 1'b0; end
                 else begin lt--; if (lt <= 0) begin st = M_IDL; lt = LINK_TIMER; end end
             end
             M_IDL: begin
                 if (abm && hist[0] == 0) st = M_EN;
                 else begin
                     if (lt > 0) lt--;
-                    if (lt <= 0 && idm) begin st = M_OK; rep = rep_of(word[11:9]); link = 1'b1; n_an_done++; end
+                    if (lt <= 0 && idm) begin
+                        st = M_OK; rep = rep_of(word[11:9]); link = 1'b1; n_an_done++; inconsist = 1'b0;
+                    end
                 end
             end
             M_OK:  if (abm) begin st = M_EN; link = 1'b0; end
