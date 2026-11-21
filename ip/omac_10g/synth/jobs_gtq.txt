@@ -1,0 +1,10 @@
+# omac_10g on the per-lane quad wrappers (name | top | generics | flow | period ns | part | extra)
+# extra "gtq <gth|gty> <clk0|clk1> <site> ...": the channel sites of one quad in lane order (lane 0
+# = master); NLANES, GT_GTY, CH_OF_LANE, REFCLK_SEL of omac_10g_lanes_top follow from them. The
+# sites are examples (two lanes of an xcku5p / xczu7ev quad, all four channels of another xcku5p
+# quad on its second reference clock), not board facts.
+omac_10g_gty2_ku5p      | omac_10g_lanes_top    |  | route | 6.4 | xcku5p-ffvb676-2-e   | gtq gty clk0 X0Y12 X0Y13
+omac_10g_gth2_zu7ev     | omac_10g_lanes_top    |  | route | 6.4 | xczu7ev-ffvc1156-2-e | gtq gth clk0 X0Y14 X0Y13
+omac_10g_gty4_clk1_ku5p | omac_10g_lanes_top    |  | synth | 6.4 | xcku5p-ffvb676-2-e   | gtq gty clk1 X0Y8 X0Y9 X0Y10 X0Y11
+omac_10g_gty1_ku5p      | omac_10g_lanes_top    |  | synth | 6.4 | xcku5p-ffvb676-2-e   | gtq gty clk0 X0Y13
+omac_10g_quad_gth_zu7ev | omac_10g_quad_gth_top |  | route | 6.4 | xczu7ev-ffvc1156-2-e | gtquad

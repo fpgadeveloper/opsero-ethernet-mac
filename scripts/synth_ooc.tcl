@@ -17,6 +17,10 @@
 # constrain the reference clock (refclk_p) to the period and freerun_clk to 10 ns.
 # "gtquad" jobs (omac_10g): omac_gen_gth_quad on the example quad (X0Y14 X0Y13 X0Y15 X0Y12)
 # with omac_gt_usp_gth_quad (four independent omac_10g lanes), clocks as for "gt".
+# "gtq <gth|gty> <clk0|clk1> <site> ..." jobs (omac_10g, top omac_10g_lanes_top): one to four
+# channel sites of one quad in lane order -> omac_gen_gth_quad / omac_gen_gty_quad with
+# omac_gt_usp_gth_quad / omac_gt_usp_gty_quad (independent omac_10g lanes); the generics
+# NLANES, GT_GTY, CH_OF_LANE and REFCLK_SEL follow from the sites; clocks as for "gtquad".
 # Results: <out_dir>/results.csv (appended), <out_dir>/<name>_*.rpt.
 #
 # Copyright (c) 2026 Opsero Electronic Design Inc.
@@ -84,6 +88,12 @@ foreach line $lines {
     set per   [string trim [lindex $f 4]]
     set part  [string trim [lindex $f 5]]
     set extra [string trim [lindex $f 6]]
+    # "gtq" jobs: keep the specification, then treat them as "gtquad" (refclk, freerun clocks)
+    set gtq {}
+    if {[lindex $extra 0] eq "gtq"} {
+        set gtq [lrange $extra 1 end]
+        set extra gtquad
+    }
     set xdc [file join $out_dir "clk_${name}.xdc"]
     set fh [open $xdc w]
     if {$extra eq "gt" || $extra eq "gtquad"} {
@@ -114,7 +124,20 @@ foreach line $lines {
         foreach fn $srcs { read_verilog -sv $fn }
         if {$extra eq "gt" || $extra eq "gtquad"} {
             set ipd [file join $out_dir ip_$name]
-            if {$extra eq "gtquad"} {
+            if {[llength $gtq]} {
+                lassign $gtq gtfam rclk
+                set sites [lrange $gtq 2 end]
+                set ::omac_gen_gty_noauto 1
+                source [file join $root gt omac_gt_usp_gty gen_gt.tcl]
+                if {$gtfam eq "gty"} {
+                    set ip [omac_gen_gty_quad $ipd $sites 100 omac_gty_quad $rclk]
+                } else {
+                    set ip [omac_gen_gth_quad $ipd $sites 100 omac_gth_quad $rclk]
+                }
+                set gtw [file join omac_gt_usp_$gtfam omac_gt_usp_${gtfam}_quad.sv]
+                lappend gens NLANES=[llength $sites] GT_GTY=[expr {$gtfam eq "gty"}] \
+                    CH_OF_LANE=[omac_ch_of_lane $sites] REFCLK_SEL=[expr {$rclk eq "clk1"}]
+            } elseif {$extra eq "gtquad"} {
                 set ip [omac_gen_gth_quad $ipd {X0Y14 X0Y13 X0Y15 X0Y12} 100 omac_gth_quad]
                 set gtw omac_gt_usp_gth_quad.sv
             } elseif {$ipn eq "omac_40g"} {
@@ -126,8 +149,13 @@ foreach line $lines {
             }
             set_property generate_synth_checkpoint false [get_files [get_property IP_FILE $ip]]
             generate_target all $ip
-            read_verilog -sv [file join $root gt omac_gt_usp_gth $gtw]
-            foreach f [glob -nocomplain [file join $ipsyn *_gth_top.sv]] { read_verilog -sv $f }
+            if {[llength $gtq]} {
+                read_verilog -sv [file join $root gt $gtw]
+                read_verilog -sv [file join $ipsyn omac_10g_lanes_top.sv]
+            } else {
+                read_verilog -sv [file join $root gt omac_gt_usp_gth $gtw]
+                foreach f [glob -nocomplain [file join $ipsyn *_gth_top.sv]] { read_verilog -sv $f }
+            }
         }
         read_xdc -mode out_of_context $xdc
         set gl {}

@@ -57,7 +57,8 @@ omac_gt_usp_gth_quad u_gt (
     .rx_usrclk2(rx_clk), .gt_rx_ready(rx_ready), .gt_rx_valid(rx_valid), .gt_rx_hdr(rx_hdr),
     .gt_rx_data(rx_data), .gt_rx_slip(rx_slip), .gt_rx_reset_req(rx_reset_req), .gt_loopback(loopback),
     .tx_polarity(4'd0), .rx_polarity(4'd0), .tx_diffctrl({4{5'b11000}}), .tx_postcursor(20'd0),
-    .tx_precursor(20'd0), .rx_lpmen(4'd0), .gt_powergood(), .qpll_lock(), .rx_cdr_lock(), .rx_reset_busy(), .refclk_mon());
+    .tx_precursor(20'd0), .rx_lpmen(4'd0),
+    .drp_addr('0), .drp_di('0), .drp_en('0), .drp_we('0), .drp_do(), .drp_rdy(), .gt_powergood(), .qpll_lock(), .rx_cdr_lock(), .rx_reset_busy(), .refclk_mon());
 
 // time value: 16-bit cycle counter in clk, gray-coded into each recovered clock
 logic [15:0] tick = '0, tick_g = '0;

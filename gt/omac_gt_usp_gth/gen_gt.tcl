@@ -10,7 +10,7 @@
 #   source gt/omac_gt_usp_gth/gen_gt.tcl
 #   omac_gen_gth <ip_dir> ?channels? ?freerun_mhz? ?module_name?
 #   omac_gen_gth_x4 <ip_dir> ?channels? ?freerun_mhz? ?module_name?
-#   omac_gen_gth_quad <ip_dir> ?channels? ?freerun_mhz? ?module_name?
+#   omac_gen_gth_quad <ip_dir> ?channels? ?freerun_mhz? ?module_name? ?refclk?
 # `channels` is the board's GT channel site (e.g. X0Y14) or a list of four sites of
 # one quad in lane order (lane 0 first); the first one is the master (its TXOUTCLK makes the shared TX user clock) and gives the
 # reference clock (MGTREFCLK0 of the quad). With more than one channel the RX
@@ -29,7 +29,11 @@
 # omac_gth_40g, omac_gen_gth_quad: omac_gth_quad); the wrappers instantiate the
 # module by that name. omac_gen_gth_quad = omac_gen_gth_x4 plus the per-channel
 # ports rxpmareset_in, rxresetdone_out, rxcdrlock_out and qpll0lock_out (the
-# per-lane RX resets of omac_gt_usp_gth_quad).
+# per-lane RX resets of omac_gt_usp_gth_quad) and the DRP ports, on one to four
+# channels of one quad (omac_gt_usp_gth_quad NLANES = the number of sites given;
+# the other channels of the quad are not instantiated). `refclk` (clk0 default,
+# or clk1) selects MGTREFCLK0 or MGTREFCLK1 of the master's quad; the wrapper's
+# REFCLK_SEL must match.
 #
 # Settings (checked against the generated IP, Vivado 2025.2, gtwizard_ultrascale 1.7):
 #   preset GTH-10GBASE-R: line rate 10.3125 Gb/s, QPLL0 (FBDIV 66, REFCLK_DIV 1),
@@ -41,9 +45,11 @@
 #
 # Copyright (c) 2026 Opsero Electronic Design Inc.
 
-proc omac_gen_gth {ip_dir {channel X0Y14} {freerun_mhz 100} {name omac_gth_10g} {extra_ports {}}} {
+proc omac_gen_gth {ip_dir {channel X0Y14} {freerun_mhz 100} {name omac_gth_10g} {extra_ports {}} {refclk clk0}} {
     set master [lindex $channel 0]
-    set rxuc [expr {[llength $channel] > 1 ? "EXAMPLE_DESIGN" : "CORE"}]
+    if {$refclk ni {clk0 clk1}} { error "omac_gen_gth: refclk must be clk0 or clk1, got $refclk" }
+    # per-channel RX user clocks in the wrapper for several channels and for the _quad IPs
+    set rxuc [expr {([llength $channel] > 1 || [llength $extra_ports]) ? "EXAMPLE_DESIGN" : "CORE"}]
     file mkdir $ip_dir
     create_ip -name gtwizard_ultrascale -vendor xilinx.com -library ip -module_name $name -dir $ip_dir -force
     set ip [get_ips $name]
@@ -52,8 +58,8 @@ proc omac_gen_gth {ip_dir {channel X0Y14} {freerun_mhz 100} {name omac_gth_10g} 
         CONFIG.CHANNEL_ENABLE            [lsort $channel] \
         CONFIG.TX_MASTER_CHANNEL         $master \
         CONFIG.RX_MASTER_CHANNEL         $master \
-        CONFIG.TX_REFCLK_SOURCE          "$master clk0" \
-        CONFIG.RX_REFCLK_SOURCE          "$master clk0" \
+        CONFIG.TX_REFCLK_SOURCE          "$master $refclk" \
+        CONFIG.RX_REFCLK_SOURCE          "$master $refclk" \
         CONFIG.TX_USER_DATA_WIDTH        64 \
         CONFIG.RX_USER_DATA_WIDTH        64 \
         CONFIG.FREERUN_FREQUENCY         $freerun_mhz \
@@ -81,9 +87,17 @@ proc omac_gen_gth_x4 {ip_dir {channels {X0Y14 X0Y13 X0Y15 X0Y12}} {freerun_mhz 1
     return [omac_gen_gth $ip_dir $channels $freerun_mhz $name]
 }
 
-proc omac_gen_gth_quad {ip_dir {channels {X0Y14 X0Y13 X0Y15 X0Y12}} {freerun_mhz 100} {name omac_gth_quad}} {
-    if {[llength $channels] != 4} { error "omac_gen_gth_quad: four channels expected" }
-    return [omac_gen_gth $ip_dir $channels $freerun_mhz $name {rxpmareset_in rxresetdone_out rxcdrlock_out qpll0lock_out}]
+proc omac_gen_gth_quad {ip_dir {channels {X0Y14 X0Y13 X0Y15 X0Y12}} {freerun_mhz 100} {name omac_gth_quad} {refclk clk0}} {
+    set n [llength $channels]
+    if {$n < 1 || $n > 4} { error "omac_gen_gth_quad: one to four channels of one quad expected" }
+    set quads {}
+    foreach c $channels {
+        if {![regexp {^X(\d+)Y(\d+)$} $c -> x y]} { error "omac_gen_gth_quad: bad channel site $c" }
+        lappend quads "X${x}Y[expr {$y / 4}]"
+    }
+    if {[llength [lsort -unique $quads]] != 1} { error "omac_gen_gth_quad: channels $channels are not in one quad" }
+    return [omac_gen_gth $ip_dir $channels $freerun_mhz $name \
+        {rxpmareset_in rxresetdone_out rxcdrlock_out qpll0lock_out drpaddr_in drpclk_in drpdi_in drpen_in drpwe_in drpdo_out drprdy_out} $refclk]
 }
 
 if {![info exists ::omac_gen_gth_noauto] && [info exists argv] && [llength $argv] >= 2} {
