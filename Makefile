@@ -6,11 +6,13 @@
 #   make synth-gt     generate a one-channel GTH gtwizard IP (xczu7ev) and synthesize it with omac_10g
 #   make synth40      out-of-context synthesis + route of omac_40g (xczu7ev @ 156.25 MHz)
 #   make synth40-gt   a four-lane GTH gtwizard IP (one xczu7ev quad) synthesized with omac_40g
+#   make synth-mdio   out-of-context synthesis + route of omac_mdio (xczu7ev, xcvc1902 @ 100 / 250 MHz)
+#   make drv-mdio     host unit test of the omac_mdio bare-metal driver (cc)
 #   make docs         build the documentation (sphinx, myst-parser, sphinx-rtd-theme)
 #   make clean
 PYTHON ?= python3
 
-.PHONY: sim sim-quick synth synth-gt synth40 synth40-gt docs clean
+.PHONY: sim sim-quick synth synth-gt synth40 synth40-gt synth-mdio drv-mdio docs clean
 
 sim:
 	$(PYTHON) -I sim/run_tests.py
@@ -29,6 +31,12 @@ synth40:
 
 synth40-gt:
 	scripts/run_synth.sh ip/omac_40g/synth/jobs_gt.txt ip/omac_40g/synth/build
+
+synth-mdio:
+	scripts/run_synth.sh ip/omac_mdio/synth/jobs.txt ip/omac_mdio/synth/build
+
+drv-mdio:
+	$(PYTHON) -I ip/omac_mdio/drivers/baremetal/test/test_omac_mdio_drv.py
 
 docs:
 	sphinx-build -W -b html docs docs/_build/html

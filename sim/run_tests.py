@@ -16,13 +16,15 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 T10 = os.path.join(ROOT, 'ip', 'omac_10g', 'sim', 'test_omac_10g.py')
+TMD = os.path.join(ROOT, 'ip', 'omac_mdio', 'sim', 'test_omac_mdio.py')
+TMB = os.path.join(ROOT, 'ip', 'omac_mdio', 'drivers', 'baremetal', 'test', 'test_omac_mdio_drv.py')
 T40 = os.path.join(ROOT, 'ip', 'omac_40g', 'sim', 'test_omac_40g.py')
 U40 = os.path.join(ROOT, 'ip', 'omac_40g', 'sim', 'test_40g_units.py')
 
 # name: (script, full arguments, quick arguments, what it covers)
 TESTS = [
     ('bd_wrapper', os.path.join(ROOT, 'scripts', 'gen_bd_wrapper.py'), ['--check'], ['--check'],
-     'ip/<ip>/rtl/<ip>_bd.v are up to date with omac_10g.sv / omac_40g.sv'),
+     'ip/<ip>/rtl/<ip>_bd.v are up to date with omac_10g.sv / omac_40g.sv / omac_mdio.sv'),
     ('ref_model', 'omac_ref.py', [], [], 'Python reference model selftest (hand vectors, CRC check value)'),
     ('crc32', 'test_crc32.py', ['400', '1'], ['100', '1'],
      'omac_crc32 at 8 and 32 bytes vs zlib.crc32, check value, residue'),
@@ -61,6 +63,10 @@ TESTS = [
     ('40g_fault', T40, ['fault'], ['fault'], 'Local Fault -> Remote Fault, Remote Fault -> idles, recovery'),
     ('40g_rate', T40, ['rate'], ['rate', '--quick'], '10,000 minimum + 1,000 maximum frames back to back: line rate'),
     ('40g_watchdog', T40, ['watchdog'], ['watchdog'], 'no alignment -> gt_rx_reset_req'),
+    ('mdio', TMD, ['base'], ['base', '--quick'], 'omac_mdio vs three PHY models: clause 22/45, all OPs, divider, '
+     'preamble, free-running MDC, hold, abort + resync, bit-bang, irq, bus error (100 MHz, push-pull)'),
+    ('mdio_fast', TMD, ['fast'], ['fast', '--quick'], 'the same at 250 MHz, OPEN_DRAIN = 1, 3 synchroniser stages'),
+    ('mdio_drv', TMB, [], [], 'omac_mdio bare-metal driver: host unit test against a register model (cc)'),
 ]
 
 
