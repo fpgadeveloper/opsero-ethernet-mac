@@ -1,7 +1,8 @@
 # Resources and timing
 
 Out-of-context results with Vivado 2025.2, measured with the repository's synthesis jobs
-(`make synth`, `make synth-gt`, `make synth40`, `make synth40-gt`, `make synth-mdio`; job lists in
+(`make synth`, `make synth-gt`, `make synth40`, `make synth40-gt`, `make synth-mdio`,
+`make synth-gtq`, `make synth-gtq-versal`; job lists in
 `ip/<ip>/synth/jobs*.txt`, runner `scripts/run_synth.sh`). The IP's `clk` and its receive
 clock(s) are constrained at the same period as asynchronous clocks. LUT / FF figures are after
 place and route where the WNS says "routed", else after synthesis. No IP uses block RAM: every
@@ -22,6 +23,12 @@ FIFO is LUTRAM.
 | 2 x omac_10g (`TS_EN` = 1, `TS_W` 16) + omac_gt_usp_gth_quad (`NLANES` = 2, GTH, sites X0Y14 X0Y13, `CH_OF_LANE` 0x01; v0.2.0-dev) | xczu7ev-ffvc1156-2-e | refclk 156.25 MHz, derived TX / RX user clocks | 6,750 | 104 | 4,712 | 0 | **+2.057 ns** routed (WHS +0.010); 2 GTHE4_CHANNEL, 1 GTHE4_COMMON |
 | 4 x omac_10g (`TS_EN` = 1) + omac_gt_usp_gty_quad (`NLANES` = 4, sites X0Y8-X0Y11, `refclk` = `clk1`; v0.2.0-dev) | xcku5p-ffvb676-2-e | refclk 156.25 MHz | 13,753 | 208 | 10,028 | 0 | +2.381 ns (synthesis); 4 GTYE4_CHANNEL, 1 GTYE4_COMMON |
 | 1 x omac_10g (`TS_EN` = 1) + omac_gt_usp_gty_quad (`NLANES` = 1, site X0Y13; v0.2.0-dev) | xcku5p-ffvb676-2-e | refclk 156.25 MHz | 3,570 | 52 | 2,674 | 0 | +2.381 ns (synthesis); 1 GTYE4_CHANNEL, 1 GTYE4_COMMON |
+| 2 x omac_10g (`TS_EN` = 1, `TS_W` 16) + omac_gt_versal_gty_quad (`NLANES` = 2, Versal GTY, quad channels 0 1 of `GTY_QUAD_X1Y1`; v0.2.0-dev, `make synth-gtq-versal`) | xcvc1902-vsva2197-2MP-e-S | refclk 156.25 MHz, derived TX / RX user clocks | 6,575 | 104 | 5,710 | 0 | **+0.907 ns** routed (WHS +0.025); 1 GTYE5_QUAD, 4 BUFG_GT (1 TX + 2 RX + 1 monitor) |
+
+On the Versal job the worst path is the transmit CRC (`u_mac_tx` first-beat flag into the CRC
+register, 8 logic levels, 85 % routing: +0.907 ns); the receive paths keep +2.0 ns. The same
+logic has +1.7 ns to +2.0 ns on the UltraScale+ parts: the margin at 156.25 MHz is smaller on
+the VC1902 fabric but positive with the default `opt_design` / `place_design` / `route_design`.
 
 v0.2.0-dev rerun of the default job (`TS_EN` = 0): 3,468 LUT, 44 LUTRAM, 2,348 FF, +2.925 ns routed: the
 register count of v0.1.0 exactly (the hooks add nothing when off; the LUT count moves with

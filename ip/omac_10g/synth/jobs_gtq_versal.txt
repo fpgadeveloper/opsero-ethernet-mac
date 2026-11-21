@@ -1,0 +1,5 @@
+# omac_10g on the Versal per-lane quad wrapper (name | top | generics | flow | period ns | part | extra)
+# extra "gtq versal <quad-site> <channel> ...": the quad's site (a LOC) and the channel numbers of
+# the lanes in lane order (lane 0 = master); NLANES, GT_VERSAL and CH_OF_LANE of
+# omac_10g_lanes_top follow from them. Example quad and channels, not board facts.
+omac_10g_vgty2_vc1902   | omac_10g_lanes_top    |  | route | 6.4 | xcvc1902-vsva2197-2MP-e-S | gtq versal GTY_QUAD_X1Y1 0 1
