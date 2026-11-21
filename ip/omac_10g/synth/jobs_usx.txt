@@ -1,0 +1,9 @@
+# omac_10g with USXGMII (USXGMII_EN = 1) and the same jobs without it for the delta
+# (name | top | generics | flow | period ns | part | extra); `make synth-usx`
+omac_10g_ref_zu7ev      | omac_10g           |                          | route | 6.4 | xczu7ev-ffvc1156-2-e |
+omac_10g_usx_zu7ev      | omac_10g           | USXGMII_EN=1             | route | 6.4 | xczu7ev-ffvc1156-2-e |
+omac_10g_usx_ts_zu7ev   | omac_10g           | USXGMII_EN=1 TS_EN=1     | route | 6.4 | xczu7ev-ffvc1156-2-e |
+omac_10g_ref_ku5p       | omac_10g           |                          | route | 6.4 | xcku5p-ffvb676-2-e   |
+omac_10g_usx_ku5p       | omac_10g           | USXGMII_EN=1             | route | 6.4 | xcku5p-ffvb676-2-e   |
+omac_10g_usx_gth2_zu7ev | omac_10g_lanes_top | USX=1                    | route | 6.4 | xczu7ev-ffvc1156-2-e | gtq gth clk0 X0Y14 X0Y13
+omac_10g_usx_gty2_ku5p  | omac_10g_lanes_top | USX=1                    | route | 6.4 | xcku5p-ffvb676-2-e   | gtq gty clk0 X0Y12 X0Y13

@@ -12,6 +12,7 @@
 #   make clean
 #   make synth-gtq    omac_10g on the per-lane quad wrappers: GTY (xcku5p) and GTH (xczu7ev) jobs
 #   make sim-gt       transceiver-level loop simulation of the quad wrappers (GT models, slow)
+#   make synth-usx    omac_10g with USXGMII_EN = 1 (and without, for the delta): xczu7ev, xcku5p, GTH / GTY
 PYTHON ?= python3
 
 .PHONY: sim sim-quick synth synth-gt synth40 synth40-gt synth-mdio drv-mdio docs clean
@@ -53,3 +54,7 @@ synth-gtq:
 
 sim-gt:
 	$(PYTHON) -I sim/run_tests.py --gt
+
+.PHONY: synth-usx
+synth-usx:
+	scripts/run_synth.sh ip/omac_10g/synth/jobs_usx.txt ip/omac_10g/synth/build

@@ -8,7 +8,8 @@
 // per-lane recovered clock and RX reset. The time value is a free-running
 // counter in the TX user clock, gray-coded into each recovered clock, as a
 // design would do it. User sides and DRP on top-level ports (out-of-context
-// check).
+// check). USX = 1: the lanes with USXGMII_EN = 1, their USXGMII controls and
+// status on the usx_ctl / usx_stat ports (shared controls, as from a register).
 //
 // Copyright (c) 2026 Opsero Electronic Design Inc.
 
@@ -19,7 +20,8 @@
 module omac_10g_lanes_top #(
     parameter int       NLANES     = 2,
     parameter bit       GT_GTY     = 1'b1,
-    parameter bit [7:0] CH_OF_LANE = 8'h04       // lanes 1, 0 -> channels 1, 0
+    parameter bit [7:0] CH_OF_LANE = 8'h04,      // lanes 1, 0 -> channels 1, 0
+    parameter bit       USX        = 1'b0
 ) (
     input  wire logic                  refclk_p,
     input  wire logic                  refclk_n,
@@ -55,7 +57,9 @@ module omac_10g_lanes_top #(
     input  wire logic [NLANES-1:0]     drp_en,
     input  wire logic [NLANES-1:0]     drp_we,
     output wire logic [16*NLANES-1:0]  drp_do,
-    output wire logic [NLANES-1:0]     drp_rdy
+    output wire logic [NLANES-1:0]     drp_rdy,
+    input  wire logic [43:0]           usx_ctl,
+    output wire logic [24*NLANES-1:0]  usx_stat
 );
 
 wire                  tx_ready;
@@ -103,7 +107,7 @@ for (genvar l = 0; l < NLANES; l++) begin : g_port
         g1 <= g0;
         for (int i = 0; i < 16; i++) rx_tick[i] <= ^(g1 >> i);
     end
-    omac_10g #(.TS_EN(1'b1), .TS_W(16)) u_mac (
+    omac_10g #(.TS_EN(1'b1), .TS_W(16), .USXGMII_EN(USX)) u_mac (
         .clk(clk), .rst(rst[l]),
         .s_axis_tx_tdata(s_axis_tx_tdata[64*l +: 64]), .s_axis_tx_tkeep(s_axis_tx_tkeep[8*l +: 8]),
         .s_axis_tx_tvalid(s_axis_tx_tvalid[l]), .s_axis_tx_tready(s_axis_tx_tready[l]),
@@ -125,7 +129,12 @@ for (genvar l = 0; l < NLANES; l++) begin : g_port
         .gt_rx_clk(rx_clk[l]), .gt_rx_ready(rx_ready[l]), .gt_rx_valid(rx_valid[l]), .gt_rx_hdr(rx_hdr[2*l +: 2]),
         .gt_rx_data(rx_data[64*l +: 64]), .gt_rx_slip(rx_slip[l]), .gt_rx_reset_req(rx_reset_req[l]),
         .tx_ts_in(tick), .tx_ts_valid(tx_ts_valid[l]), .tx_ts_val(tx_ts_val[16*l +: 16]), .tx_ts_lane4(),
-        .tx_ts_user(), .rx_ts_in(rx_tick), .m_axis_rx_ts(m_axis_rx_ts[16*l +: 16]), .m_axis_rx_ts_lane4());
+        .tx_ts_user(), .rx_ts_in(rx_tick), .m_axis_rx_ts(m_axis_rx_ts[16*l +: 16]), .m_axis_rx_ts_lane4(),
+        .ctl_usx_an_enable(usx_ctl[0]), .ctl_usx_an_restart(usx_ctl[1]), .ctl_usx_rx_strict(usx_ctl[2]),
+        .ctl_usx_speed(usx_ctl[5:3]), .ctl_usx_an_adv(usx_ctl[21:6]), .ctl_usx_link_timer(usx_ctl[41:22]),
+        .stat_usx_an_complete(usx_stat[24*l]), .stat_usx_an_state(usx_stat[24*l + 1 +: 3]),
+        .stat_usx_lp_word(usx_stat[24*l + 4 +: 16]), .stat_usx_speed(usx_stat[24*l + 20 +: 3]),
+        .stat_usx_link_ok(usx_stat[24*l + 23]), .ev_usx_an_start(), .ev_usx_an_done(), .ev_usx_rep_error());
 end
 
 endmodule
