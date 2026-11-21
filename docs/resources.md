@@ -1,7 +1,7 @@
 # Resources and timing
 
 Out-of-context results with Vivado 2025.2, measured with the repository's synthesis jobs
-(`make synth`, `make synth-gt`, `make synth40`, `make synth40-gt`; job lists in
+(`make synth`, `make synth-gt`, `make synth40`, `make synth40-gt`, `make synth-mdio`; job lists in
 `ip/<ip>/synth/jobs*.txt`, runner `scripts/run_synth.sh`). The IP's `clk` and its receive
 clock(s) are constrained at the same period as asynchronous clocks. LUT / FF figures are after
 place and route where the WNS says "routed", else after synthesis. No IP uses block RAM: every
@@ -45,6 +45,22 @@ In the GTH jobs Vivado derives the TX and RX user clocks from the same QPLL and 
 related, which makes the synthesis hold figure of those jobs meaningless (-0.295 ns for the
 four-lane job); in a design the receive clocks are recovered from the far end, so constrain the
 crossings as described on [](gt_usp_gth.md#clock-constraints).
+
+## omac_mdio
+
+The MDIO master on its AXI4-Lite clock `clk` (no other clock).
+
+| Job | Part | Clock | LUT | LUTRAM | FF | BRAM | WNS |
+|---|---|---|---:|---:|---:|---:|---:|
+| omac_mdio, defaults | xczu7ev-ffvc1156-2-e | 100 MHz (10 ns) | 189 | 2 | 231 | 0 | **+7.391 ns** routed (WHS +0.051) |
+| omac_mdio, `DIV_INIT` = 49 | xczu7ev-ffvc1156-2-e | 250 MHz (4 ns) | 190 | 2 | 231 | 0 | **+1.710 ns** routed (WHS +0.031) |
+| omac_mdio, `DIV_INIT` = 49, `OPEN_DRAIN` = 1 | xczu7ev-ffvc1156-2-e | 250 MHz (4 ns) | 189 | 2 | 230 | 0 | **+1.586 ns** routed (WHS +0.042) |
+| omac_mdio, defaults | xcvc1902-vsva2197-2MP-e-S | 100 MHz (10 ns) | 200 | 1 | 246 | 0 | **+7.184 ns** routed (WHS +0.038) |
+| omac_mdio, `DIV_INIT` = 49 | xcvc1902-vsva2197-2MP-e-S | 250 MHz (4 ns) | 208 | 1 | 250 | 0 | **+1.429 ns** routed (WHS +0.038) |
+
+The register block and the frame engine are a few hundred cells on any part; the worst path at
+250 MHz is the frame engine's next-bit decision (state and bit counter into the MDIO output
+bit or the bit counter), 2.3-2.5 ns.
 
 ## In a full design
 

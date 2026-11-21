@@ -34,6 +34,10 @@ clock) is the design's ([](gt_usp_gth.md#board-placement)).
 | [`omac_gt_usp_gth`, `omac_gt_usp_gth_x4`](gt_usp_gth.md) | UltraScale+ GTH, 64B/66B asynchronous gearbox (AMD `gtwizard_ultrascale`, free); one lane (omac_10g) or four lanes of one quad with per-lane receive clocks (omac_40g) | **hardware-proven** with both IPs (ZCU106, [](hardware.md)) |
 | `omac_gt_usp_gty` | UltraScale+ GTY | planned |
 
+| Management IP | Function | Maturity |
+|---|---|---|
+| [`omac_mdio`](omac_mdio.md) | MDIO master, IEEE 802.3 clause 22 and clause 45, AXI4-Lite registers; for the PHYs of any MAC (omac or vendor); Linux MDIO-bus driver and bare-metal driver included | v0.2.0-dev: simulated against behavioural PHY models, implemented on UltraScale+ and Versal, drivers compile-tested; not yet on hardware |
+
 Every IP comes with a self-checking simulation regression against an independent Python model
 of the standard ([](simulation.md)) and out-of-context implementation results
 ([](resources.md)). One tag series covers the whole repository (`vX.Y.Z`); the maturity of each
@@ -103,8 +107,10 @@ MAC, or a hard-MAC adapter) with the same ports let one block design take any of
 
 ### No drivers, by design
 
-The cores ship without a driver: no register block inside the IPs, no Linux netdev, no
-bare-metal library. A design folds the MAC's static control and status ports into its own
+The MAC cores ship without a driver: no register block inside the IPs, no Linux netdev, no
+bare-metal library. (The MDIO master [`omac_mdio`](omac_mdio.md) is the exception: it is a
+self-contained peripheral with its own registers, and comes with a Linux MDIO-bus driver and a
+bare-metal driver.) A design folds the MAC's static control and status ports into its own
 register block (each design puts something different behind the MAC), and its software brings
 the link up through those registers. What the registers must expose, the clock-domain rule, the
 counters, the interrupts and a worked example are the
@@ -121,6 +127,7 @@ interface
 omac_10g
 omac_40g
 gt_usp_gth
+omac_mdio
 common
 ```
 

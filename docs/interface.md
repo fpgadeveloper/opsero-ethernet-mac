@@ -337,8 +337,10 @@ registers of a real design, is referenced in [6.5](#65-worked-example).
 
 ## 6. Software contract
 
-The repository ships **no driver**: the IPs have no register block (no AXI-Lite slave), and there
-is no Linux netdev driver and no bare-metal library. Each omac IP is controlled through the static
+The repository ships **no MAC driver**: the MAC IPs have no register block (no AXI-Lite slave),
+and there is no Linux netdev driver and no bare-metal library for them. (The MDIO master
+[`omac_mdio`](omac_mdio.md), a separate management peripheral, has its own registers and
+drivers.) Each omac IP is controlled through the static
 levels `ctl_*` and observed through the levels `stat_*` and the one-cycle pulses `ev_*`; **the
 design around the MAC folds them into its own register block**, and its software drives them
 through that block. Why:
