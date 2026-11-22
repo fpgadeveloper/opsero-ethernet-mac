@@ -20,9 +20,10 @@ Work in progress; merged to `main` and tagged after hardware validation.
   forced speed); `stat_link_up` follows the PHY's link bit. `ctl_usx_*` / `stat_usx_*` /
   `ev_usx_*` ports and an optional AXI4-Lite register block (`omac_10g_usx_axil`) laid out for a
   Linux phylink PCS driver. Timestamp hooks keep their reference plane (the block with the first
-  copy of /S/) at every speed. Protocol details from the public USXGMII multiport specification
-  are parameters (`USX_SOP_FILL`, `USX_AN_OPCODE`, `USX_AN_LSWAP`, `USX_AN_TXFMT`,
-  `USX_IDLE_RESTART`, `USX_LINK_TIMER`) until checked against the single-port specification.
+  copy of /S/) at every speed. Checked point by point against the Cisco USXGMII single-port
+  specification (EDCS-1150953; docs/usxgmii.md "Specification check"): the defaults conform; the
+  protocol parameters (`USX_SOP_FILL`, `USX_AN_OPCODE`, `USX_AN_LSWAP`, `USX_AN_TXFMT`,
+  `USX_IDLE_RESTART`, `USX_LINK_TIMER`) stay for PHYs that deviate.
   `USXGMII_EN` = 0 (default): unchanged, every omac_10g regression output byte-identical.
   Simulated against an independent behavioural PHY model and IP against IP at all six speeds;
   routed out of context on its own and with two USXGMII lanes on each quad wrapper (GTH, GTY,
@@ -118,8 +119,7 @@ Work in progress; merged to `main` and tagged after hardware validation.
   SyncE + PTP reference design for the quad SFP28 FMC on a ZCU106).
 - omac_mdio on hardware; its Linux driver on a running kernel (compile-tested against AMD
   linux-xlnx 6.12 for arm64 and mainline 6.17).
-- omac_10g USXGMII against a real PHY; the protocol details listed in docs/usxgmii.md "Open
-  protocol items" against the single-port specification.
+- omac_10g USXGMII against a real PHY.
 
 ## v0.1.0 (2026-11-05)
 

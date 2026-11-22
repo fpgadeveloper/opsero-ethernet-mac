@@ -85,7 +85,7 @@ locally):
 | [docs/index.md](docs/index.md) | overview, IP and maturity tables, how to use the cores, bring-up checklist |
 | [docs/interface.md](docs/interface.md) | the shared boundary contract: user side (mandatory), GT side, optional statistics, connecting a consumer, the software contract (no drivers by design) |
 | [docs/omac_10g.md](docs/omac_10g.md) | omac_10g: architecture, bring-up and software (sequence, link-up time, link loss, loopback, PAUSE, debug order), parameters, timing and constraints, verification |
-| [docs/usxgmii.md](docs/usxgmii.md) | omac_10g with `USXGMII_EN` = 1: replication, auto-negotiation, ports and optional registers, Linux phylink mapping, timestamps per speed, open protocol items |
+| [docs/usxgmii.md](docs/usxgmii.md) | omac_10g with `USXGMII_EN` = 1: replication, auto-negotiation, ports and optional registers, Linux phylink mapping, timestamps per speed, check against the single-port specification |
 | [docs/omac_40g.md](docs/omac_40g.md) | omac_40g: architecture, throughput and its known limit, lane order and skew, board placement, bring-up and software (sequence, link-up time, link loss, loopback, PAUSE, debug order), parameters, timing |
 | [docs/gt_usp_gth.md](docs/gt_usp_gth.md) | GTH wrappers (one and four lanes): generator scripts, global synthesis, clock constraints, resets and handshake (software view), gtwizard settings, bit order, RX clocking, board placement (what a design determines for its board) |
 | [docs/omac_mdio.md](docs/omac_mdio.md) | omac_mdio: MDIO master (clause 22 / 45), register map, frames and timing, hold-off, abort, bit-bang, block design integration, level translators, Linux driver + device tree, bare-metal driver |

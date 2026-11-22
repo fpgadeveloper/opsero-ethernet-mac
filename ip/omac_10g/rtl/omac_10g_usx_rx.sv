@@ -5,8 +5,8 @@
 // (omac_10g_mac_rx): of the 32-bit words of the decoded XGMII stream it keeps
 // one in `rep_n` (the sample) and rebuilds 64-bit columns for the MAC.
 //   * Sampling phase: every word that carries /S/ in its lane 0 is a sample and
-//     restarts the count (EDCS-1517762 2.6.2 / 2.6.4: "receive logic samples the
-//     1st 4-byte word containing SOP", then every rep_n-th word). The phase is
+//     restarts the count, then every rep_n-th word is a sample (Cisco USXGMII
+//     single-port specification EDCS-1150953, 2.6.2 and 2.6.7). The phase is
 //     therefore found again at every frame: idles that the PHY inserts or
 //     deletes between frames for clock compensation (in units of 4 bytes, so
 //     /S/ may arrive in lane 0 or lane 4 of a block) move only the idle part.

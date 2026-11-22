@@ -137,7 +137,7 @@ def parse_capture(path):
 
 
 # ---------------------------------------------------------------- USXGMII
-USX_FILL = 0xAA   # lane 0 of the copies of a replicated /S/ word (EDCS-1517762 2.6.3)
+USX_FILL = 0xAA   # lane 0 of the copies of a replicated /S/ word (USXGMII single-port spec 2.6.1)
 
 
 def parse_capture_usx(path, rep):

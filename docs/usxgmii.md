@@ -1,11 +1,9 @@
 # USXGMII in omac_10g
 
 **Maturity (v0.2.0-dev): simulated** against an independent behavioural PHY model and
-IP against IP at all six speeds, implemented out of context; **not yet run against a real
-USXGMII PHY**. Some details of the protocol are taken from the publicly circulated USXGMII
-*multiport* specification and must still be checked against the *single-port* specification
-(see [Open protocol items](#open-protocol-items)); they are parameters, so a correction does not
-need new RTL.
+IP against IP at all six speeds, implemented out of context, and checked point by point against
+the single-port USXGMII specification ([Specification check](#specification-check));
+**not yet run against a real USXGMII PHY**.
 
 ## What it is
 
@@ -31,27 +29,26 @@ carries USXGMII lanes as it is: the UltraScale+ GTH / GTY quad wrappers and the 
 wrapper, at the 10GBASE-R line rate. `USXGMII_EN` is a parameter of each `omac_10g` instance, so
 the lanes of one quad may mix USXGMII and 10GBASE-R ports.
 
-Sources: IEEE 802.3 clauses 46 (XGMII, sequence ordered sets, link fault signalling), 49
-(64B/66B PCS) and 37 (the arbitration that USXGMII borrows); the public Cisco specification
-"USXGMII - Multiport Specification" EDCS-1517762 (marked *Cisco Public*; its sections 1.1.1,
-1.1.2, 2.5 and 2.6 describe the auto-negotiation word, its ordered set and the replication, and
-section 2.6.3 says that its 2.5G-over-5G replication "is similar to single port USXGMII"); the
-Linux kernel's USXGMII support (`MDIO_USXGMII_*` in `include/uapi/linux/mdio.h`,
-`phylink_decode_usxgmii_word()`, the NXP Lynx PCS driver `drivers/net/pcs/pcs-lynx.c`). The
-single-port specification itself (Cisco EDCS-1467841) was not available while this was
-written.
+Sources: the Cisco specification "Universal SXGMII Interface for a Single MultiGigabit Copper
+Network Port" (USXGMII single port, EDCS-1150953, revision 2.5, published by Cisco as a public
+document; called *the specification* below, with its section numbers); IEEE 802.3 clauses 46
+(XGMII, sequence ordered sets, link fault signalling), 49 (64B/66B PCS) and 37 (the arbitration
+that USXGMII borrows); the Linux kernel's USXGMII support (`MDIO_USXGMII_*` in
+`include/uapi/linux/mdio.h`, `phylink_decode_usxgmii_word()`, the NXP Lynx PCS driver
+`drivers/net/pcs/pcs-lynx.c`). The specification is not reproduced here; it is available from
+Cisco, with its own intellectual-property terms.
 
 ## Parameters
 
 | Parameter | Default | Description |
 |---|---|---|
 | `USXGMII_EN` | 0 | 1 adds rate adaptation and auto-negotiation (needs `SPEED` = 10). 0: the plain 10GBASE-R MAC + PCS; the `ctl_usx_*` inputs are ignored, the `stat_usx_*` / `ev_usx_*` outputs are 0, no logic is added |
-| `USX_LINK_TIMER` | 250000 | auto-negotiation link timer in `clk` cycles: 1.6 ms at 156.25 MHz. `ctl_usx_link_timer` overrides it at run time |
-| `USX_SOP_FILL` | 8'hAA | lane 0 of the copies of a replicated /S/ word (EDCS-1517762 2.6.1 / 2.6.3). The receiver accepts any data byte there |
-| `USX_AN_OPCODE` | 8'h03 | lane 3 of the auto-negotiation ordered set (EDCS-1517762 1.1.2) |
-| `USX_AN_LSWAP` | 0 | 0: word bits 15:8 in lane 1, 7:0 in lane 2 (EDCS-1517762 1.1.2); 1: the other way round |
-| `USX_AN_TXFMT` | 0 | 0: the ordered set in both halves of every block (block type 0x55); 1: in the low half, idles in the high half (block type 0x4B). Both (and type 0x2D) are always received |
-| `USX_IDLE_RESTART` | 1 | 1: three idle words received in AN_RESTART, ABILITY_DETECT or ACKNOWLEDGE_DETECT restart the exchange (the USXGMII replacement of clause 37's RUDI(INVALID) rule); 0: ignore idles there |
+| `USX_LINK_TIMER` | 250000 | auto-negotiation link timer in `clk` cycles: 1.6 ms at 156.25 MHz, the specification's default (1.1.2; it allows 1.0 to 2.0 ms in steps of 0.1 ms, 1.1.1). `ctl_usx_link_timer` overrides it at run time |
+| `USX_SOP_FILL` | 8'hAA | lane 0 of the copies of a replicated /S/ word (specification 2.6.1). The receiver accepts any data byte there |
+| `USX_AN_OPCODE` | 8'h03 | lane 3 of the auto-negotiation ordered set (specification 1.1.2) |
+| `USX_AN_LSWAP` | 0 | 0: word bits 15:8 in lane 1, 7:0 in lane 2 (specification 1.1.2); 1: the other way round (not conforming; only for a PHY that needs it) |
+| `USX_AN_TXFMT` | 0 | 0: the ordered set in both halves of every block (block type 0x55); 1: in the low half, idles in the high half (block type 0x4B). Both are layouts the specification shows (1.1.2); both (and type 0x2D) are always received. Keep 0: see [Specification check](#specification-check), item 2 |
+| `USX_IDLE_RESTART` | 1 | 1: three idle words received in AN_RESTART, ABILITY_DETECT or ACKNOWLEDGE_DETECT restart the exchange (the USXGMII replacement of clause 37's RUDI(INVALID) rule, specification 1.1.1); 0: ignore idles there (not conforming) |
 
 ## Ports
 
@@ -59,7 +56,7 @@ All in `clk`. Present with `USXGMII_EN` = 0 too (inputs ignored, outputs 0).
 
 | Port | Dir | Meaning |
 |---|---|---|
-| `ctl_usx_an_enable` | in | 1: auto-negotiation; 0: no exchange, the link runs at `ctl_usx_speed` ("forced", for PHYs without auto-negotiation and for tests) |
+| `ctl_usx_an_enable` | in | 1: auto-negotiation; 0: no exchange, the link runs at `ctl_usx_speed` ("forced": software reads the PHY's speed over MDIO and programs it, specification 2.6.8; the PHY's own in-band auto-negotiation must then be off too, or it keeps sending configuration words; also for tests) |
 | `ctl_usx_an_restart` | in | rising edge: restart the exchange |
 | `ctl_usx_an_adv[15:0]` | in | our configuration word (bit 14, acknowledge, is set by the arbitration). Typical: 0x9601 (link, full duplex, 10G, bit 0) |
 | `ctl_usx_speed[2:0]` | in | the forced speed code (as word bits 11:9), used with `ctl_usx_an_enable` = 0 |
@@ -83,11 +80,11 @@ register block below does it.
 
 ### The configuration word
 
-EDCS-1517762 table 2; the same bits as Linux `MDIO_USXGMII_*`:
+Specification 1.1.2; the same bits as Linux `MDIO_USXGMII_*`:
 
 | Bits | PHY to MAC | MAC to PHY (our `ctl_usx_an_adv`) |
 |---|---|---|
-| 15 | link of the copper port | the specification: "same as PHY to MAC" |
+| 15 | link of the copper port | link, defined as in the other direction |
 | 14 | acknowledge (set by the arbitration) | acknowledge (set by the arbitration) |
 | 13 | reserved, 0 | reserved, 0 |
 | 12 | 1 = full duplex | as PHY to MAC |
@@ -150,29 +147,30 @@ host mode and in-band auto-negotiation; the PCS above then follows the PHY's cop
   inter-packet gap logic would no longer see the real gaps.
 * **Replication** (`omac_10g_usx_tx`, one register). The low word of the held column fills the
   first N/2 output columns (in both halves), the high word the last N/2. The first copy of a
-  word is the word itself; the copies follow EDCS-1517762 2.6.1 / 2.6.3:
-  * the word with /S/ in its lane 0: copies with `USX_SOP_FILL` (0xAA, a data byte) in lane 0
-    and the preamble in lanes 1-3 ("SOP word transmitted only once");
-  * the word with /T/: copies are idle words ("EOP transmitted once and the remaining ... are
-    idles");
-  * every other word (data, idles, sequence ordered sets, error): identical copies ("all other
-    sequence ordered sets and control sets are replicated").
+  word is the word itself; the copies follow specification 2.6.1:
+  * the word with /S/ in its lane 0 is sent once; its copies carry `USX_SOP_FILL` (0xAA, a data
+    byte) in lane 0 and the preamble in lanes 1-3;
+  * the word with /T/ is sent once; its copies are idle words;
+  * every other word (data, idles, sequence ordered sets, error): identical copies.
+  The replication sits between the MAC (with its reconciliation sublayer) and the unchanged
+  clause 49 encoder, on 4-byte XGMII words (specification 1 and 2).
   As N is even (or 1), every frame starts with /S/ in lane 0 of a block (block type 0x78) at
   N >= 2, and the 64B/66B encoder never sees two /S/ or two /T/ in a column.
 * **Gaps.** The MAC's inter-packet gap (9-15 bytes, average 12, deficit idle count) is kept in
   bytes of the link speed: the regression measures a minimum of 9 bytes at every speed and a mean of
   11.75-12.0 bytes over the back-to-back frames (48 at 10G, 24 at 5G, 18 at 2.5G, 8 at 1G, 4 at 10M).
 * **Auto-negotiation columns.** While the exchange runs, the RS sends configuration ordered sets
-  (then idles in IDLE_DETECT) instead of the MAC's columns; Local Fault (`ctl_tx_fault`) and
-  Remote Fault (our receiver has a local fault) still take priority. After LINK_OK the MAC's
-  columns are passed from the next idle column on, so no frame starts in the middle.
+  (then idles in IDLE_DETECT) instead of the MAC's columns, which are discarded; Local Fault
+  (`ctl_tx_fault`) and Remote Fault (our receiver has a local fault) still take priority, as the
+  specification requires for link faults (2.5.1). After LINK_OK the MAC's columns are passed from
+  the next idle column on, so no frame starts in the middle.
 
 ## Receive
 
 * **Sampling** (`omac_10g_usx_rx`, between the PCS and the MAC, in the recovered clock). Of the
   32-bit words of the decoded stream one in N goes to the MAC. Every word with /S/ in its lane 0
-  is a sample and restarts the count (EDCS-1517762 2.6.2 / 2.6.4: "receive logic samples the
-  1st 4-byte word containing SOP"). Inside a frame the PHY cannot insert or delete anything, so
+  is a sample and restarts the count (specification 2.6.2 and step 8 of 2.6.7: the sampling
+  point is set again at every /S/). Inside a frame the PHY cannot insert or delete anything, so
   the phase found at /S/ holds to /T/; between frames the PHY's clock compensation may insert or
   delete idles, in units of 4 bytes, which moves the idle part only and may put the next /S/ in
   lane 4 of a block: both are handled, and an idle sample that falls in the low half of a block
@@ -188,7 +186,10 @@ host mode and in-band auto-negotiation; the PCS above then follows the PHY's cop
   frame, while errors in a sample are caught by the FCS as at 10G. (As at 10G, a frame whose
   error comes within its first 4 bytes after the SFD is dropped rather than delivered bad: with
   strict checking that is a mismatch in a copy of the first data word.)
-* **Link fault, BER, block lock** work on the undecimated stream exactly as at 10GBASE-R.
+* **Link fault, BER, block lock** work on the undecimated stream exactly as at 10GBASE-R. (The
+  specification passes link fault words through the sampler like everything else, 2.6.2; for a
+  PHY that replicates its fault ordered sets, as it must, both give the same fault state, the
+  undecimated detector only clears a fault after 128 line columns instead of 128 samples.)
 * **EEE / LPI.** Low-power-idle words (control code 0x06) are passed through and ignored between
   frames (tested: LPI words in the gaps at 5G); the IP never sends LPI, does not act on it and
   advertises no EEE capability.
@@ -207,7 +208,7 @@ than that can go unseen by the arbitration (clause 37 partners hold each word mu
 until their own match, then for a link timer).
 
 The arbitration (`clk`) is figure 37-6 without next pages, with the USXGMII changes of
-EDCS-1517762 1.1.1 / 2.5:
+specification 1.1.1 (repeated in 2.5):
 
 | State | Sends | Leaves for |
 |---|---|---|
@@ -222,9 +223,12 @@ EDCS-1517762 1.1.1 / 2.5:
 Global: loss of block lock (instead of clause 37's `an_sync_status` = FAIL), a rising edge of
 `ctl_usx_an_restart` and enabling auto-negotiation go to AN_ENABLE; with `USX_IDLE_RESTART` = 1,
 idle_match in AN_RESTART, ABILITY_DETECT or ACKNOWLEDGE_DETECT does too (the USXGMII
-replacement of RUDI(INVALID)). At LINK_OK the PHY's word (`stat_usx_lp_word`) sets the
-replication of both directions; `stat_usx_link_ok` needs its link bit and a defined speed code.
-Half duplex is reported in the word but not supported (the MAC is full duplex only).
+replacement of RUDI(INVALID)). Hi BER, link faults and errors do not restart the exchange
+(specification 2.5.1). At LINK_OK the PHY's word (`stat_usx_lp_word`) sets the replication of
+both directions (specification 2.6.7, step 8); `stat_usx_link_ok` needs its link bit and a
+defined speed code. Half duplex is reported in the word but not supported: the MAC-PHY interface
+is full duplex only (specification 1), so the PHY must not advertise half-duplex modes on its
+copper side.
 
 A speed change is a new exchange: the PHY sends its new word, the IP leaves LINK_OK, both sides
 negotiate again and the new replication applies from LINK_OK. Frames in flight at that moment
@@ -304,60 +308,41 @@ Results and the fault-injection (mutation) check: [](simulation.md#usxgmii).
 ## Limitations
 
 * Single port only (no USXGMII-M multi-port: no port multiplexing, no alignment markers), no
-  packet control header (PCH), no EEE / LPI generation, full duplex only.
-* The protocol details listed below follow the public multiport specification and the
-  description of clause 37; they are parameters where they are uncertain.
+  packet control header (PCH, optional in the specification, 1.1.3), no EEE / LPI generation,
+  full duplex only, 10G-SXGMII only (no 5.15625 Gb/s lane option).
+* No software-controlled negotiation mode (specification 2.6.8 describes it as an alternative to
+  the hardware exchange): with auto-negotiation off the speed is forced (`ctl_usx_speed`) and no
+  configuration words are sent.
 * Speeds change only through a new exchange (or `ctl_usx_speed` with AN off).
 * Not yet tested against a real PHY.
 
-## Open protocol items
+## Specification check
 
-To be checked against the single-port specification (Cisco EDCS-1467841) and a real PHY.
-"Ours" is what the IP does today.
+Every protocol choice of the IP, checked against the single-port specification. "Conforms":
+the specification states the behaviour and the IP has it; "not specified": the specification
+leaves it open, the IP's choice is given with the reason.
 
-1. **Ordered-set layout of the word.** Ours (EDCS-1517762 1.1.2, table 3): lane 0 /Q/ (0x9C),
-   lane 1 word[15:8], lane 2 word[7:0], lane 3 0x03. Byte order and opcode for single port?
-   (`USX_AN_LSWAP`, `USX_AN_OPCODE`.)
-2. **How densely the words are sent.** Ours: in both halves of every block (block type 0x55);
-   alternative: low half + idles (0x4B). Does the PHY need idles in between (clock
-   compensation), is there a required repetition rate? (`USX_AN_TXFMT`; both received.)
-3. **Replication during auto-negotiation.** Ours: configuration words and the IDLE_DETECT idles
-   are sent and received at the 10G word rate, never replicated.
-4. **Match functions.** Ours: three consecutive words per ordered set (not per block); single idle
-   words between words ignored; idle_match = three consecutive idle 32-bit words.
-5. **The "idle received" restart** (EDCS-1517762 1.1.1: "rudi(invalid) changed to idle received
-   during an_restart, ability_detect, acknowledge_detect"). Ours: idle_match (three idle words)
-   restarts; a single idle does not. (`USX_IDLE_RESTART`.)
-6. **Link timer.** Ours: 1.6 ms (EDCS-1517762 1.1.2 "like SGMII ... 1.6 ms"), programmable at run
-   time (1.1.1: "configurable from 1 msec to 2 msec in steps of 0.1 msec").
-7. **The MAC's word.** Table 2 says bits 15, 12 and 11:9 from MAC to PHY are "same as PHY to MAC";
-   clause 37's consistency check needs the MAC's word to be the same in ability and
-   acknowledge. Ours: a fixed programmable word (default 0x9601, as Linux pcs-lynx), not an
-   echo. Does a PHY require the echo?
-8. **Link-change signalling by the PHY** (1.1.2: "re-signal ... until message is received with
-   Auto-negotiation acknowledge bit set to 1 or for the duration of the link timer"). Ours: any
-   ability_match in LINK_OK restarts the full exchange; tested against both a PHY that restarts
-   from scratch and one that re-signals from link-ok.
-9. **Copies of the /S/ word.** Ours: lane 0 = 0xAA (data), lanes 1-3 = the preamble
-   (EDCS-1517762 2.6.3 example "555555fb 555555aa"). Single port: 0xAA too? (`USX_SOP_FILL`;
-   the receiver does not check that byte.)
-10. **Copies of the /T/ word.** Ours: idle words (2.6.3: "EOP is transmitted once and the
-    remaining ... are idles"). 2.6.1 words it as "EOP byte is replaced with idle", which for a
-    word with data before /T/ would not be encodable in a 64B/66B block; the receiver expects
-    idle words (only the replica counter would notice a difference, the frame is unaffected).
-11. **Alignment.** Ours: replication groups start at the /S/ word, which is in lane 0 of a block
-    at N >= 2; the receiver restarts its sampling phase at every /S/, in lane 0 or 4.
-12. **Gap at replicated speeds.** Ours: the 10G deficit idle count, i.e. 9-15 bytes (average 12)
-    of the link speed between frames. Does the PHY need at least 12 bytes at 1G and below?
-13. **Preamble.** Ours: 7 bytes + SFD at every speed (EDCS-1517762 2: the PHY adds bytes to make
-    7 + SFD towards the MAC).
-14. **Restart conditions.** Ours: block-lock loss restarts; hi BER, link faults and errors do not
-    (2.5.1: "USXGMII Auto-neg is NOT re-started due to error/link fault conditions").
-15. **Faults during auto-negotiation.** Ours: Local / Remote Fault columns replace the
-    configuration words (2.5.1: "if Tx MAC transmits errors or link faults, the auto-negotiation
-    is interrupted"). In particular, while the PHY sends Local Fault on its host lane we answer
-    with Remote Fault and no configuration words: a PHY that waits for our words before it stops
-    sending Local Fault would never complete. What does a PHY send on its host lane before and
-    during the exchange?
-16. **EEE.** Bits 8 / 7 are not acted on; how LPI is replicated is not specified here (we never
-    send it and ignore it on receive).
+| # | Item | Specification | IP |
+|---|---|---|---|
+| 1 | Layout of the configuration ordered set | 1.1.2: conforms | lane 0 /Q/ (0x9C, sequence ordered set), lane 1 word[15:8], lane 2 word[7:0], lane 3 opcode 0x03 (`USX_AN_LSWAP` = 0, `USX_AN_OPCODE` = 0x03) |
+| 2 | Block layout of the configuration columns | 1.1.2 shows the ordered set alone (with idles, block type 0x4B), after idles (0x2D) and in both halves (0x55); no repetition rate is specified | sends 0x55 (both halves), receives all three. 0x55 keeps every 32-bit word a configuration word, so a PHY that still samples one word in N (it has not yet left its replicated mode) sees the words at any phase; with 0x4B it could sample only the idle halves. Clock compensation by the PHY then deletes one of two consecutive sequence ordered sets (which IEEE 802.3 allows) rather than an idle |
+| 3 | Replication during auto-negotiation | 2.6.7 steps 2 and 8: the exchange runs on the unreplicated lane, replication starts at completion | conforms. The configuration columns are identical words, so they are also a valid replicated stream for a partner still at a lower speed |
+| 4 | Match functions | 1.1.1: as figure 37-6; 2.6.5: three consecutive identical words | ability_match / acknowledge_match on three consecutive ordered sets; single idle words between them do not break a run (needed for the 0x4B and 0x2D layouts) |
+| 5 | Idles in AN_RESTART, ABILITY_DETECT, ACKNOWLEDGE_DETECT | 1.1.1: received idles take the place of clause 37's RUDI(INVALID) in these three states | conforms (`USX_IDLE_RESTART` = 1). What counts as "idles received" is not specified; the IP needs three consecutive idle words, so single idles of the 0x4B / 0x2D layouts do not restart |
+| 6 | Link timer | 1.1.2: 1.6 ms; 1.1.1: configurable 1.0 to 2.0 ms in 0.1 ms steps; no tolerance stated | 1.6 ms (250000 cycles of 156.25 MHz), any value at run time |
+| 7 | The MAC's word | 1.1.2: same bit layout in both directions, the MAC sets bit 0 and the acknowledge bit; whether the MAC's link / duplex / speed must echo the PHY's is not specified | a programmable word, default 0x9601 (link, full duplex, 10G, bit 0), acknowledge added by the arbitration |
+| 8 | Link change signalled by the PHY | 1.1.1: the exchange restarts whenever the copper link changes; 1.1.2: the PHY sends its words until acknowledged or for one link timer | any ability_match in LINK_OK restarts the exchange (clause 37 LINK_OK); tested with a partner that restarts from scratch and one that re-signals directly |
+| 9 | Copies of the /S/ word | 2.6.1: sent once, the copies carry 0xAA in lane 0, the preamble in lanes 1-3 | conforms (`USX_SOP_FILL`); the receiver accepts any data byte there |
+| 10 | Copies of the /T/ word | 2.6.1: sent once, the copies are idle words | conforms |
+| 11 | Receive sampling | 2.6.2, 2.6.7 step 8: one word in N from the /S/ word on, the phase set again at every /S/ | conforms, /S/ in lane 0 or 4 |
+| 12 | Gap at replicated speeds | 2.8.1.1 / 2.8.2.1: the PHY accepts gaps down to 5 bytes from the MAC | 9-15 bytes, average 12, in bytes of the link speed (the 10G deficit idle count) |
+| 13 | Preamble | 1, 2.2: 7 bytes + SFD in both directions (the PHY pads a short preamble); 2.7: the PCH replaces it only when that option is on | standard preamble; PCH not supported |
+| 14 | Restart conditions | 1.1.1: loss of block lock; 2.5.1: not on errors or link faults; software restart | conforms (block lock lost, `ctl_usx_an_restart`, enabling AN) |
+| 15 | Faults during the exchange | 2.5.1: link faults from the MAC side interrupt the configuration words and pass through; 2.8.1: a PHY whose copper side is still negotiating sends idles or Local Fault | conforms: Local / Remote Fault replace the configuration words. A PHY set to send Local Fault while its copper side negotiates gets Remote Fault back; when it starts sending its words (copper link up) the IP's Remote Fault ends 128 columns after the last Local Fault and the exchange proceeds |
+| 16 | EEE | 1.1.2: capability bits 8 (EEE) and 7 (clock stop); LPI is a control set and is replicated like the others (2.6.1) | advertises neither; LPI received between frames is ignored, never sent |
+| 17 | Speed codes, duplex | 1.1.2: 000 10M, 001 100M, 010 1G, 011 10G, 100 2.5G, 101 5G, 110 / 111 reserved; bit 12 full duplex; the interface itself is full duplex only (1) | conforms; reserved codes give no link; half duplex is not supported |
+| 18 | Replication factors | table 1 and 2.6.1 for 10.3125 Gb/s: 100M x100, 1G x10, 2.5G x4, 5G x2, 10G x1; 10M by the corresponding factor (x1000) | conforms |
+| 19 | Where the replication sits | 1, 2: on 4-byte XGMII words between the MAC and an unchanged clause 49 PCS | conforms |
+| 20 | Auto-negotiation disabled | 1.1.1: without the PHY's USXGMII mode both sides run plain 10GBASE-R; 2.6.8: software may program the speed itself | `ctl_usx_an_enable` = 0: the speed is forced; with `USXGMII_EN` = 0 the IP is the plain 10GBASE-R MAC + PCS |
+| 21 | PAUSE, flow control | 2.4: no USXGMII-level flow control or other rate adaptation; PAUSE frames are payload | PAUSE quanta in bit times of the link speed |
+| 22 | Clocking | 2.6.6: auto-negotiation in the PCS / MAC clock; no frequency tolerance beyond clause 49 | AN arbitration in `clk`, matching in the recovered clock |

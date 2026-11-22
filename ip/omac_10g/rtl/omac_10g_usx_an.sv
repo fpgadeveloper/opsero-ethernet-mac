@@ -4,21 +4,26 @@
 // exchange of the 16-bit configuration word with the PHY and the resolution of
 // the replication factor.
 //
-// The word (EDCS-1517762 table 2, the same bits as Linux MDIO_USXGMII_*):
+// References: the Cisco USXGMII single-port specification (EDCS-1150953),
+// sections given as "spec N"; IEEE 802.3 clause 37.
+// The word (spec 1.1.2, the same bits as Linux MDIO_USXGMII_*):
 //   15 link, 14 acknowledge, 12 full duplex, 11:9 speed (000 10M, 001 100M,
 //   010 1G, 011 10G, 100 2.5G, 101 5G), 8 EEE, 7 EEE clock stop, 0 = 1.
-// On the line (EDCS-1517762 1.1.2): an XGMII sequence ordered set, lane 0 /Q/
+// On the line (spec 1.1.2): an XGMII sequence ordered set, lane 0 /Q/
 // (0x9C), lane 1 word[15:8], lane 2 word[7:0], lane 3 the opcode 0x03 (LSWAP = 1
-// exchanges lanes 1 and 2, OPCODE is a parameter). Transmitted in both halves
-// of every column (block type 0x55, TXFMT = 0) or in the low half with idles
-// above (block type 0x4B, TXFMT = 1); received in either half of any column.
+// exchanges lanes 1 and 2: not conforming, OPCODE is a parameter). Transmitted
+// in both halves of every column (block type 0x55, TXFMT = 0) or in the low half
+// with idles above (block type 0x4B, TXFMT = 1); received in either half of any
+// column. TXFMT = 0 keeps every 32-bit word a configuration word, so a partner
+// that still samples one word in N sees the words at any phase.
 //
 // Arbitration: IEEE 802.3 clause 37 figure 37-6 without next pages, with the
-// USXGMII changes listed in EDCS-1517762 1.1.1 / 2.5: restart when block lock
+// USXGMII changes listed in spec 1.1.1 (and 2.5): restart when block lock
 // is lost (instead of an_sync_status = FAIL), idles received in AN_RESTART /
 // ABILITY_DETECT / ACKNOWLEDGE_DETECT restart (instead of RUDI(INVALID);
-// IDLE_RESTART = 0 disables it), link timer programmable (1 to 2 ms in the
-// specification; `link_timer` in clk cycles, 0 = LINK_TIMER).
+// IDLE_RESTART = 0 disables it), link timer programmable (spec: 1.6 ms, 1.0 to
+// 2.0 ms; `link_timer` in clk cycles, 0 = LINK_TIMER). Not restarted by hi BER,
+// link faults or errors (spec 2.5.1).
 //   receive (rx clock): every configuration ordered set gives a word;
 //     ability_match = three consecutive words equal except bit 14;
 //     acknowledge_match = three consecutive equal words with bit 14 set;
@@ -34,8 +39,9 @@
 //     COMPLETE_ACKNOWLEDGE and IDLE_DETECT; any ability_match in LINK_OK
 //     restarts (the PHY signals a link change by sending words again).
 //   resolution: at LINK_OK the partner's word (lp_word, the word acknowledged)
-//     gives speed, duplex and link; rep_n follows the speed. link_ok = LINK_OK
-//     with the partner's link bit set and a defined speed code.
+//     gives speed, duplex and link; rep_n follows the speed (spec 2.6.7 step
+//     8). link_ok = LINK_OK with the partner's link bit set and a defined
+//     speed code.
 //   an_enable = 0: AN_DISABLE_LINK_OK, data at force_speed, link_ok = 1.
 // xmit: 0 = configuration columns (cfg_d / cfg_c), 1 = idles, 2 = data.
 // Status values for software in clk; state codes as the localparams below.

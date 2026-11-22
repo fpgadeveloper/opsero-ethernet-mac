@@ -11,10 +11,9 @@
 //   * Replication: the low word of the held column occupies the first rep_n/2
 //     output columns (in both halves), the high word the last rep_n/2. The
 //     first copy of each word is the word itself; the other copies follow the
-//     rules of the publicly circulated USXGMII multiport specification
-//     (EDCS-1517762, sections 2.6.1 and 2.6.3: "SOP word transmitted only once",
-//     "EOP transmitted once and the remaining ... are idles"), so the 64B/66B
-//     encoder never sees two /S/ or two /T/ in one column:
+//     Cisco USXGMII single-port specification (EDCS-1150953) section 2.6.1 (the
+//     /S/ word and the /T/ word are sent once), so the 64B/66B encoder never
+//     sees two /S/ or two /T/ in one column:
 //       - a word with /S/ in its lane 0: the copies carry SOP_FILL (a data byte)
 //         in lane 0, the preamble bytes in lanes 1-3;
 //       - a word with /T/ in any lane: the copies are idle words;
