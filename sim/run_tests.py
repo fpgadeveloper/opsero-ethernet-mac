@@ -27,6 +27,8 @@ GT_TESTS = [
     ('gt_gty_loop', TGT, ['gty', '40'], ['gty', '8'], 'omac_gt_usp_gty_quad, two lanes crossed: reset, CDR, '
      'gearbox slip, block lock, link up, frames both ways (GTY models, xcku5p)'),
     ('gt_gth_loop', TGT, ['gth', '40'], ['gth', '8'], 'omac_gt_usp_gth_quad, the same on GTH (xczu7ev, lane map 0x01)'),
+    ('gt_versal_loop', TGT, ['versal', '40'], ['versal', '8'], 'omac_gt_versal_gty_quad, the same on Versal GTY '
+     '(xcvc1902, gt_quad_base, quad channels 1 and 0)'),
 ]
 
 # name: (script, full arguments, quick arguments, what it covers)

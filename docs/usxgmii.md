@@ -26,6 +26,11 @@ transceiver wrapper and the same 156.25 MHz `clk` serve every speed. The MAC's A
 interface, its timestamp hooks and its register-free control style stay as they are; the
 stream simply runs at the link rate (`s_axis_tx_tready` is high in one cycle of N).
 
+The interface to the transceiver is unchanged, so every transceiver wrapper of this repository
+carries USXGMII lanes as it is: the UltraScale+ GTH / GTY quad wrappers and the Versal GTY quad
+wrapper, at the 10GBASE-R line rate. `USXGMII_EN` is a parameter of each `omac_10g` instance, so
+the lanes of one quad may mix USXGMII and 10GBASE-R ports.
+
 Sources: IEEE 802.3 clauses 46 (XGMII, sequence ordered sets, link fault signalling), 49
 (64B/66B PCS) and 37 (the arbitration that USXGMII borrows); the public Cisco specification
 "USXGMII - Multiport Specification" EDCS-1517762 (marked *Cisco Public*; its sections 1.1.1,

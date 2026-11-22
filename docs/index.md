@@ -33,6 +33,7 @@ clock) is the design's ([](gt_usp_gth.md#board-placement)).
 |---|---|---|
 | [`omac_gt_usp_gth`, `omac_gt_usp_gth_x4`](gt_usp_gth.md) | UltraScale+ GTH, 64B/66B asynchronous gearbox (AMD `gtwizard_ultrascale`, free); one lane (omac_10g) or four lanes of one quad with per-lane receive clocks (omac_40g) | **hardware-proven** with both IPs (ZCU106, [](hardware.md)) |
 | [`omac_gt_usp_gty_quad`](gt_usp_gth.md#gty-omac_gt_usp_gty_quad); `omac_gt_usp_gth_quad` with 1-4 lanes | UltraScale+ GTY (and GTH): one to four independent omac_10g lanes of one quad, `MGTREFCLK0` / `MGTREFCLK1` | v0.2.0-dev: simulated with the transceiver models (link-up and frames), routed out of context; not yet on hardware |
+| [`omac_gt_versal_gty_quad`](gt_versal_gty.md) | Versal GTY (GTYE5): one to four independent omac_10g lanes of one quad, 64B/66B asynchronous gearbox (AMD `gt_quad_base`, free), RPLL; the same ports as the UltraScale+ quad wrappers | v0.2.0-dev: simulated with the transceiver models (link-up, frames, bit order on the serial line), implemented in a complete Versal design; not yet on hardware |
 
 | Management IP | Function | Maturity |
 |---|---|---|
@@ -128,6 +129,7 @@ omac_10g
 usxgmii
 omac_40g
 gt_usp_gth
+gt_versal_gty
 omac_mdio
 common
 ```

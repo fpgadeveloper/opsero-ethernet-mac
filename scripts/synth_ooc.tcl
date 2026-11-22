@@ -21,6 +21,11 @@
 # channel sites of one quad in lane order -> omac_gen_gth_quad / omac_gen_gty_quad with
 # omac_gt_usp_gth_quad / omac_gt_usp_gty_quad (independent omac_10g lanes); the generics
 # NLANES, GT_GTY and CH_OF_LANE follow from the sites; clocks as for "gtquad".
+# "gtq versal <quad-site> <channel> ..." jobs (omac_10g, top omac_10g_lanes_top): Versal GTY,
+# one to four channel numbers (0-3) of the quad <quad-site> (e.g. GTY_QUAD_X1Y1, a LOC on the
+# quad) in lane order -> omac_gen_versal_gty_quad with omac_gt_versal_gty_quad; generics
+# NLANES, GT_VERSAL and CH_OF_LANE follow; Vivado creates the quad's output clocks itself
+# (ch<n>_txoutclk / ch<n>_rxoutclk), which get asynchronous clock groups here.
 # Results: <out_dir>/results.csv (appended), <out_dir>/<name>_*.rpt.
 #
 # Copyright (c) 2026 Opsero Electronic Design Inc.
@@ -33,7 +38,9 @@ set ipn  [file tail [file dirname [file dirname $jobs_file]]]
 set ipsyn [file dirname $jobs_file]
 file mkdir $out_dir
 set ::omac_gen_gth_noauto 1
+set ::omac_gen_versal_gty_noauto 1
 source [file join $root gt omac_gt_usp_gth gen_gt.tcl]
+source [file join $root gt omac_gt_versal_gty gen_gt.tcl]
 
 set srcs {}
 set fh [open [file join $root ip $ipn rtl $ipn.f] r]
@@ -101,6 +108,14 @@ foreach line $lines {
         puts $fh "create_clock -period 10.0 -name freerun \[get_ports freerun_clk\]"
         # four independent lanes: the free-running clock only meets the GT clocks in synchronisers
         if {$extra eq "gtquad"} { puts $fh "set_clock_groups -asynchronous -group \[get_clocks freerun\]" }
+        if {[lindex $gtq 0] eq "versal"} {
+            # Versal: the quad's LOC; the TX / RX output clocks of the used channels (created by
+            # Vivado, 156.25 MHz) are asynchronous to each other (RX = recovered clocks)
+            puts $fh "set_property LOC [lindex $gtq 1] \[get_cells -hierarchical -filter {PRIMITIVE_TYPE =~ ADVANCED.GT.*}\]"
+            set grp ""
+            foreach c [lrange $gtq 2 end] { append grp " -group ch${c}_rxoutclk" }
+            puts $fh "set_clock_groups -asynchronous -group \[get_clocks -include_generated_clocks ch[lindex $gtq 2]_txoutclk\]$grp"
+        }
     } elseif {$ipn eq "omac_mdio"} {
         puts $fh "create_clock -period $per -name clk \[get_ports clk\]"
     } elseif {$ipn eq "omac_40g"} {
@@ -131,14 +146,22 @@ foreach line $lines {
                 set sites [lrange $gtq 2 end]
                 set ::omac_gen_gty_noauto 1
                 source [file join $root gt omac_gt_usp_gty gen_gt.tcl]
-                if {$gtfam eq "gty"} {
+                if {$gtfam eq "versal"} {
+                    set ip [omac_gen_versal_gty_quad $ipd $sites 100 omac_versal_gty_quad GTY]
+                } elseif {$gtfam eq "gty"} {
                     set ip [omac_gen_gty_quad $ipd $sites 100 omac_gty_quad $rclk]
                 } else {
                     set ip [omac_gen_gth_quad $ipd $sites 100 omac_gth_quad $rclk]
                 }
-                set gtw [file join omac_gt_usp_$gtfam omac_gt_usp_${gtfam}_quad.sv]
-                lappend gens NLANES=[llength $sites] GT_GTY=[expr {$gtfam eq "gty"}] \
-                    CH_OF_LANE=[omac_ch_of_lane $sites]
+                if {$gtfam eq "versal"} {
+                    set gtw [file join omac_gt_versal_gty omac_gt_versal_gty_quad.sv]
+                    lappend gens NLANES=[llength $sites] GT_GTY=0 GT_VERSAL=1 \
+                        CH_OF_LANE=[omac_versal_ch_of_lane $sites]
+                } else {
+                    set gtw [file join omac_gt_usp_$gtfam omac_gt_usp_${gtfam}_quad.sv]
+                    lappend gens NLANES=[llength $sites] GT_GTY=[expr {$gtfam eq "gty"}] \
+                        CH_OF_LANE=[omac_ch_of_lane $sites]
+                }
             } elseif {$extra eq "gtquad"} {
                 set ip [omac_gen_gth_quad $ipd {X0Y14 X0Y13 X0Y15 X0Y12} 100 omac_gth_quad]
                 set gtw omac_gt_usp_gth_quad.sv

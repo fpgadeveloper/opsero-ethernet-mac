@@ -2,9 +2,10 @@
 //
 // omac_10g_lanes_top - synthesis-only top: NLANES omac_10g with the timestamp
 // hooks (TS_EN = 1) on the per-lane transceiver wrapper of one quad,
-// omac_gt_usp_gth_quad (GT_GTY = 0) or omac_gt_usp_gty_quad (GT_GTY = 1), with
-// the gtwizard IP made by the matching gen_gt.tcl (omac_gen_gth_quad /
-// omac_gen_gty_quad): NLANES independent 10GBASE-R ports, one TX user clock, a
+// omac_gt_usp_gth_quad (GT_GTY = 0), omac_gt_usp_gty_quad (GT_GTY = 1) or
+// omac_gt_versal_gty_quad (GT_VERSAL = 1), with the transceiver IP made by the
+// matching gen_gt.tcl (omac_gen_gth_quad / omac_gen_gty_quad /
+// omac_gen_versal_gty_quad): NLANES independent 10GBASE-R ports, one TX user clock, a
 // per-lane recovered clock and RX reset. The time value is a free-running
 // counter in the TX user clock, gray-coded into each recovered clock, as a
 // design would do it. User sides and DRP on top-level ports (out-of-context
@@ -20,6 +21,7 @@
 module omac_10g_lanes_top #(
     parameter int       NLANES     = 2,
     parameter bit       GT_GTY     = 1'b1,
+    parameter bit       GT_VERSAL  = 1'b0,
     parameter bit [7:0] CH_OF_LANE = 8'h04,      // lanes 1, 0 -> channels 1, 0
     parameter bit       USX        = 1'b0
 ) (
@@ -68,7 +70,20 @@ wire [2*NLANES-1:0]   tx_hdr, rx_hdr;
 wire [64*NLANES-1:0]  tx_data, rx_data;
 wire [3*NLANES-1:0]   loopback;
 
-if (GT_GTY) begin : g_gty
+if (GT_VERSAL) begin : g_versal
+    omac_gt_versal_gty_quad #(.NLANES(NLANES), .CH_OF_LANE(CH_OF_LANE)) u_gt (
+        .refclk_p(refclk_p), .refclk_n(refclk_n), .freerun_clk(freerun_clk), .reset_all(reset_all),
+        .gty_rxp(gt_rxp), .gty_rxn(gt_rxn), .gty_txp(gt_txp), .gty_txn(gt_txn),
+        .tx_usrclk2(clk), .gt_tx_ready(tx_ready), .gt_tx_hdr(tx_hdr), .gt_tx_data(tx_data),
+        .rx_usrclk2(rx_clk), .gt_rx_ready(rx_ready), .gt_rx_valid(rx_valid), .gt_rx_hdr(rx_hdr),
+        .gt_rx_data(rx_data), .gt_rx_slip(rx_slip), .gt_rx_reset_req(rx_reset_req), .gt_loopback(loopback),
+        .tx_polarity('0), .rx_polarity('0), .tx_diffctrl({NLANES{5'd25}}), .tx_postcursor('0),
+        .tx_precursor('0), .rx_lpmen('0),
+        .drp_addr(drp_addr), .drp_di(drp_di), .drp_en(drp_en), .drp_we(drp_we), .drp_do(drp_do), .drp_rdy(drp_rdy),
+        .gt_powergood(), .qpll_lock(qpll_lock), .rx_cdr_lock(), .rx_reset_busy(), .refclk_mon(refclk_mon),
+        .apb_paddr('0), .apb_psel(1'b0), .apb_penable(1'b0), .apb_pwrite(1'b0), .apb_pwdata('0),
+        .apb_prdata(), .apb_pready(), .apb_pslverr());
+end else if (GT_GTY) begin : g_gty
     omac_gt_usp_gty_quad #(.NLANES(NLANES), .CH_OF_LANE(CH_OF_LANE)) u_gt (
         .refclk_p(refclk_p), .refclk_n(refclk_n), .freerun_clk(freerun_clk), .reset_all(reset_all),
         .gty_rxp(gt_rxp), .gty_rxn(gt_rxn), .gty_txp(gt_txp), .gty_txn(gt_txn),

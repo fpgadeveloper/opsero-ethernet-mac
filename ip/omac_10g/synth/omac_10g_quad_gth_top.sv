@@ -97,7 +97,11 @@ for (genvar l = 0; l < 4; l++) begin : g_port
         .gt_rx_clk(rx_clk[l]), .gt_rx_ready(rx_ready[l]), .gt_rx_valid(rx_valid[l]), .gt_rx_hdr(rx_hdr[2*l +: 2]),
         .gt_rx_data(rx_data[64*l +: 64]), .gt_rx_slip(rx_slip[l]), .gt_rx_reset_req(rx_reset_req[l]),
         .tx_ts_in(tick), .tx_ts_valid(tx_ts_valid[l]), .tx_ts_val(tx_ts_val[16*l +: 16]), .tx_ts_lane4(),
-        .tx_ts_user(), .rx_ts_in(rx_tick), .m_axis_rx_ts(m_axis_rx_ts[16*l +: 16]), .m_axis_rx_ts_lane4());
+        .tx_ts_user(), .rx_ts_in(rx_tick), .m_axis_rx_ts(m_axis_rx_ts[16*l +: 16]), .m_axis_rx_ts_lane4(),
+        .ctl_usx_an_enable(1'b0), .ctl_usx_an_restart(1'b0), .ctl_usx_an_adv('0), .ctl_usx_speed('0),
+        .ctl_usx_link_timer('0), .ctl_usx_rx_strict(1'b0), .stat_usx_an_complete(), .stat_usx_an_state(),
+        .stat_usx_lp_word(), .stat_usx_speed(), .stat_usx_link_ok(), .ev_usx_an_start(), .ev_usx_an_done(),
+        .ev_usx_rep_error());
 end
 
 endmodule

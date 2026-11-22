@@ -25,10 +25,25 @@ Work in progress; merged to `main` and tagged after hardware validation.
   `USX_IDLE_RESTART`, `USX_LINK_TIMER`) until checked against the single-port specification.
   `USXGMII_EN` = 0 (default): unchanged, every omac_10g regression output byte-identical.
   Simulated against an independent behavioural PHY model and IP against IP at all six speeds;
-  not yet on hardware.
+  routed out of context on its own and with two USXGMII lanes on each quad wrapper (GTH, GTY,
+  Versal GTY; `make synth-usx`); not yet on hardware.
 - **common**: `omac_cdc_word` (toggle-handshake crossing of a multi-bit level); clock enable `ce`
   on `omac_pause` (timers) and `omac_10g_mac_tx` (tied to 1 by omac_40g and by omac_10g without
   USXGMII).
+- **gt/omac_gt_versal_gty** (Versal GTY, GTYE5): `omac_gen_versal_gty_quad` (AMD's free
+  `gt_quad_base` IP as a plain `.xci`, one protocol per lane from the `GTY-10GBASE-R` preset,
+  changed to RPLL and 64-bit internal / user width: one 156.25 MHz user clock per direction)
+  and `omac_gt_versal_gty_quad`, one to four independent `omac_10g` lanes of one quad with the
+  parameters and ports of the UltraScale+ quad wrappers (plus the quad's APB3 port; the DRP
+  ports are kept but inert) and a reset controller around the channels' master resets;
+  per-lane RX recovery through `RXMSTDATAPATHRESET`. **The Versal gearbox sends bit 0 first:**
+  `BIT_REVERSE` defaults to 0 on this wrapper (1 on UltraScale+). Simulated with the GT models
+  (`sim/gt`, family `versal`), implemented in a complete VCK190 design; not yet on hardware.
+  OOC job `make synth-gtq-versal`.
+- **sim/gt wire check:** `tb_gt_loop` decodes lane 0's serial transmit pin on an idle line
+  (66-bit alignment, control sync header "10" in transmission order, descrambled idle payload)
+  so a bit-order error that a lane-to-lane loop cannot see fails the test; passes on GTY / GTH
+  UltraScale+ (`BIT_REVERSE` = 1) and Versal (`BIT_REVERSE` = 0).
 - **gt/omac_gt_usp_gty** (UltraScale+ GTY): `omac_gen_gty_quad` (gtwizard preset
   `GTY-10GBASE-R`, set like the GTH quad IP) and `omac_gt_usp_gty_quad`, the GTY twin of
   `omac_gt_usp_gth_quad` (same parameters and ports, serial pins `gty_*`); `omac_ch_of_lane`
