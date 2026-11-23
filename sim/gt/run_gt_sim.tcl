@@ -5,11 +5,13 @@
 # of one quad, serial pins crossed like a cable; link-up and frames both ways.
 #
 #   vivado -mode batch -nojournal -nolog -source sim/gt/run_gt_sim.tcl \
-#          -tclargs <gty|gth|versal> <out_dir> ?nframes?
+#          -tclargs <gty|gth|versal|versal_xh> <out_dir> ?nframes?
 # gty: xcku5p-ffvb676-2-e, sites X0Y12 X0Y13; gth: xczu7ev-ffvc1156-2-e, sites X0Y14 X0Y13
 # (lane 0 = X0Y14 = gtwizard channel 1: a non-identity lane map); versal:
 # xcvc1902-vsva2197-2MP-e-S, omac_gt_versal_gty_quad on quad channels 1 and 0 (lane 0 =
-# channel 1: a non-identity lane map, lane 0's channel is the TX master). Prints one line
+# channel 1: a non-identity lane map, lane 0's channel is the TX master); versal_xh: the
+# same on quad channels 2 and 1, one lane on each half-quad (HSCLK1 + HSCLK0: the IP then has
+# two reference clock inputs; lane 0 = channel 2, the TX master on HSCLK1). Prints one line
 # "GT_SIM <fam> PASS|FAIL ..." and the TB_ lines; sim/gt/test_gt.py wraps it for the
 # regression (sim/run_tests.py --gt). Slow: the GT models simulate every line bit.
 #
@@ -30,9 +32,13 @@ if {$fam eq "gty"} {
 } elseif {$fam eq "versal"} {
     set part xcvc1902-vsva2197-2MP-e-S
     set sites {1 0}
+} elseif {$fam eq "versal_xh"} {
+    set part xcvc1902-vsva2197-2MP-e-S
+    set sites {2 1}
 } else {
-    error "run_gt_sim.tcl: family gty, gth or versal expected"
+    error "run_gt_sim.tcl: family gty, gth, versal or versal_xh expected"
 }
+set is_versal [expr {$fam in {versal versal_xh}}]
 file delete -force $out_dir
 file mkdir $out_dir
 create_project gt_sim_$fam $out_dir -part $part -force
@@ -46,7 +52,7 @@ source [file join $root gt omac_gt_usp_gth gen_gt.tcl]
 source [file join $root gt omac_gt_usp_gty gen_gt.tcl]
 source [file join $root gt omac_gt_versal_gty gen_gt.tcl]
 set ipd [file join $out_dir ip]
-if {$fam eq "versal"} {
+if {$is_versal} {
     set ip [omac_gen_versal_gty_quad $ipd $sites 100 omac_versal_gty_quad GTY]
 } elseif {$fam eq "gty"} {
     set ip [omac_gen_gty_quad $ipd $sites 100 omac_gty_quad clk0]
@@ -63,7 +69,7 @@ foreach l [split [read $fh] "\n"] {
     lappend srcs [file join $root $l]
 }
 close $fh
-if {$fam eq "versal"} {
+if {$is_versal} {
     lappend srcs [file join $root gt omac_gt_versal_gty omac_gt_versal_gty_quad.sv]
 } else {
     lappend srcs [file join $root gt omac_gt_usp_$fam omac_gt_usp_${fam}_quad.sv]
@@ -74,8 +80,8 @@ add_files -fileset sim_1 -norecurse [file join $here tb_gt_loop.sv]
 set_property file_type SystemVerilog [get_files [file join $here tb_gt_loop.sv]]
 set_property top tb_gt_loop [get_filesets sim_1]
 set_property top_lib xil_defaultlib [get_filesets sim_1]
-set chl [expr {$fam eq "versal" ? [omac_versal_ch_of_lane $sites] : [omac_ch_of_lane $sites]}]
-set_property generic "GTY=[expr {$fam eq "gty"}] VERSAL=[expr {$fam eq "versal"}] CH_OF_LANE=$chl NFRAMES=$nframes" [get_filesets sim_1]
+set chl [expr {$is_versal ? [omac_versal_ch_of_lane $sites] : [omac_ch_of_lane $sites]}]
+set_property generic "GTY=[expr {$fam eq "gty"}] VERSAL=$is_versal CH_OF_LANE=$chl NFRAMES=$nframes" [get_filesets sim_1]
 set_property -name {xsim.simulate.runtime} -value {-all} -objects [get_filesets sim_1]
 set_property -name {xsim.elaborate.debug_level} -value {off} -objects [get_filesets sim_1]
 update_compile_order -fileset sources_1

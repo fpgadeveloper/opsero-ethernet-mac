@@ -29,6 +29,8 @@ GT_TESTS = [
     ('gt_gth_loop', TGT, ['gth', '40'], ['gth', '8'], 'omac_gt_usp_gth_quad, the same on GTH (xczu7ev, lane map 0x01)'),
     ('gt_versal_loop', TGT, ['versal', '40'], ['versal', '8'], 'omac_gt_versal_gty_quad, the same on Versal GTY '
      '(xcvc1902, gt_quad_base, quad channels 1 and 0)'),
+    ('gt_versal_xh_loop', TGT, ['versal_xh', '40'], ['versal_xh', '8'], 'omac_gt_versal_gty_quad with one lane '
+     'on each half-quad (quad channels 2 and 1: both reference clock inputs of the IP, TX master on HSCLK1)'),
 ]
 
 # name: (script, full arguments, quick arguments, what it covers)

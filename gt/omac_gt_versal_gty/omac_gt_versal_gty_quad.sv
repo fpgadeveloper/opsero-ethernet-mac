@@ -37,6 +37,8 @@
 //     clock, one BUFG_GT per lane): rx_usrclk2[l] = omac gt_rx_clk of lane l.
 //   * status: qpll_lock (= the RPLL lock of the used HSCLK(s); the name is kept
 //     from the UltraScale+ wrappers), per-lane rx_cdr_lock and rx_reset_busy.
+//   * reference clock: one IBUFDS_GTE5 drives the IP's reference clock input of each
+//     half-quad (HSCLK0 = channels 0-1, HSCLK1 = channels 2-3) that has lanes.
 //   * refclk_mon: the reference clock / 8 (IBUFDS_GTE5 ODIV2 -> BUFG_GT),
 //     running whenever the reference clock does, for a frequency monitor.
 //   * register access: Versal transceivers have no per-channel DRP; the quad's
@@ -382,8 +384,8 @@ assign qpll_lock = (!(|USED[1:0]) || rplllock[0]) && (!(|USED[3:2]) || rplllock[
 
 // ---------------- the gt_quad_base instance ----------------
 // Every input of the IP is connected: the used ports to the vectors above, the rest to
-// the IP's own default values (gt_quad_base 1.1). An input left open would float in
-// simulation.
+// the IP's own default values (gt_quad_base 1.1), the reference clock to every logical
+// reference clock input the IP has (below). An input left open would float in simulation.
 `define OMAC_VGTQ_CH(c) \
     .ch``c``_txdata(txdata_c[128*c +: 128]), \
     .ch``c``_txheader(txheader_c[6*c +: 6]), \
@@ -517,118 +519,136 @@ assign qpll_lock = (!(|USED[1:0]) || rplllock[0]) && (!(|USED[3:2]) || rplllock[
     .ch``c``_iloreset(1'd0)
 
 
-omac_versal_gty_quad u_gt (
-    `OMAC_VGTQ_CH(0),
-    `OMAC_VGTQ_CH(1),
-    `OMAC_VGTQ_CH(2),
-    `OMAC_VGTQ_CH(3),
-    .resetdone_northin(2'd3),
-    .resetdone_southin(2'd3),
-    .txpinorthin(4'd0),
-    .rxpinorthin(4'd0),
-    .txpisouthin(4'd0),
-    .rxpisouthin(4'd0),
-    .pipenorthin(6'd0),
-    .pipesouthin(6'd0),
-    .GT_REFCLK0(refclk),
-    .bgbypassb(1'd0),
-    .bgmonitorenb(1'd0),
-    .bgpdb(1'd0),
-    .bgrcalovrdenb(1'd1),
-    .bgrcalovrd(5'd0),
-    .debugtraceready(1'd0),
-    .debugtraceclk(1'd0),
-    .rcalenb(1'd0),
-    .trigackout0(1'd0),
-    .trigin0(1'd0),
-    .ubenable(1'd1),
-    .ubiolmbrst(1'd0),
-    .ubmbrst(1'd0),
-    .ubintr(12'd0),
-    .ubrxuart(1'd0),
-    .ctrlrsvdin0(16'd0),
-    .ctrlrsvdin1(14'd0),
-    .gpi(16'd0),
-    .refclk0_clktestsig(1'd0),
-    .refclk1_clktestsig(1'd0),
-    .altclk(1'd0),
-    .hsclk0_lcpllclkrsvd0(1'd0),
-    .hsclk0_lcpllclkrsvd1(1'd0),
-    .hsclk0_rpllclkrsvd0(1'd0),
-    .hsclk0_rpllclkrsvd1(1'd0),
-    .hsclk1_lcpllclkrsvd0(1'd0),
-    .hsclk1_lcpllclkrsvd1(1'd0),
-    .hsclk1_rpllclkrsvd0(1'd0),
-    .hsclk1_rpllclkrsvd1(1'd0),
-    .hsclk0_lcpllrsvd0(8'd0),
-    .hsclk0_lcpllrsvd1(8'd0),
-    .hsclk0_rpllrsvd0(8'd0),
-    .hsclk0_rpllrsvd1(8'd0),
-    .hsclk1_lcpllrsvd0(8'd0),
-    .hsclk1_lcpllrsvd1(8'd0),
-    .hsclk1_rpllrsvd0(8'd0),
-    .hsclk1_rpllrsvd1(8'd0),
-    .apb3clk(freerun_clk),
-    .apb3paddr(apb_paddr),
-    .apb3penable(apb_penable),
-    .apb3presetn(1'b1),
-    .apb3prdata(apb_prdata),
-    .apb3psel(apb_psel),
-    .apb3pslverr(apb_pslverr),
-    .apb3pready(apb_pready),
-    .apb3pwdata(apb_pwdata),
-    .apb3pwrite(apb_pwrite),
-    .pcielinkreachtarget(1'd0),
-    .refclk0_gtrefclkpd(1'd0),
-    .hsclk0_lcpllsdmtoggle(1'd0),
-    .hsclk0_rpllsdmtoggle(1'd0),
-    .hsclk0_lcpllresetbypassmode(1'd0),
-    .hsclk0_rpllresetbypassmode(1'd0),
-    .hsclk0_lcpllpd(1'd0),
-    .hsclk0_rpllpd(1'd0),
-    .hsclk0_lcpllresetmask(2'd3),
-    .hsclk0_rpllresetmask(2'd3),
-    .hsclk0_lcpllfbdiv(8'd0),
-    .hsclk0_rpllfbdiv(8'd0),
-    .hsclk0_lcpllrefclksel(3'd1),
-    .hsclk0_rpllrefclksel(3'd1),
-    .hsclk0_rplllock(rplllock[0]),
-    .hsclk0_lcpllreset(1'd0),
-    .hsclk0_rpllreset(1'd0),
-    .refclk1_gtrefclkpd(1'd0),
-    .hsclk1_lcpllsdmtoggle(1'd0),
-    .hsclk1_rpllsdmtoggle(1'd0),
-    .hsclk1_lcpllresetbypassmode(1'd0),
-    .hsclk1_rpllresetbypassmode(1'd0),
-    .hsclk1_lcpllpd(1'd0),
-    .hsclk1_rpllpd(1'd0),
-    .hsclk1_lcpllresetmask(2'd3),
-    .hsclk1_rpllresetmask(2'd3),
-    .hsclk1_lcpllfbdiv(8'd0),
-    .hsclk1_rpllfbdiv(8'd0),
-    .hsclk1_lcpllrefclksel(3'd1),
-    .hsclk1_rpllrefclksel(3'd1),
-    .hsclk1_rplllock(rplllock[1]),
-    .hsclk1_lcpllreset(1'd0),
-    .hsclk1_rpllreset(1'd0),
-    .hsclk0_lcpllsdmdata(26'd18729921),
-    .hsclk1_lcpllsdmdata(26'd32216807),
-    .hsclk0_rpllsdmdata(26'd4535360),
-    .hsclk1_rpllsdmdata(26'd4520949),
-    .rxmarginclk(1'd0),
-    .rxmarginreqcmd(4'd0),
-    .rxmarginreqlanenum(2'd0),
-    .rxmarginreqpayld(8'd0),
-    .rxmarginreqreq(1'd0),
-    .rxmarginresack(1'd0),
-    .gtpowergood(gtpowergood),
-    .pcieltssm(6'd0),
-    .rxp(rxp_c),
-    .rxn(rxn_c),
-    .txp(txp_c),
+// The IP has one logical reference clock input per half-quad (PLL pair) that has lanes:
+// GT_REFCLK0 alone when the lanes are all on HSCLK0 (channels 0-1) or all on HSCLK1
+// (channels 2-3); GT_REFCLK0 (HSCLK0) and GT_REFCLK1 (HSCLK1) when there are lanes on both
+// halves (checked with gt_quad_base 1.1, Vivado 2025.2, for every channel set). Both are
+// driven by the one reference clock buffer: an open GT_REFCLK1 leaves the RPLL of HSCLK1
+// without a reference clock (its lanes never come up, and Vivado times their RXOUTCLK with
+// the APB3 clock).
+`define OMAC_VGTQ_PORTS \
+    `OMAC_VGTQ_CH(0), \
+    `OMAC_VGTQ_CH(1), \
+    `OMAC_VGTQ_CH(2), \
+    `OMAC_VGTQ_CH(3), \
+    .resetdone_northin(2'd3), \
+    .resetdone_southin(2'd3), \
+    .txpinorthin(4'd0), \
+    .rxpinorthin(4'd0), \
+    .txpisouthin(4'd0), \
+    .rxpisouthin(4'd0), \
+    .pipenorthin(6'd0), \
+    .pipesouthin(6'd0), \
+    .GT_REFCLK0(refclk), \
+    .bgbypassb(1'd0), \
+    .bgmonitorenb(1'd0), \
+    .bgpdb(1'd0), \
+    .bgrcalovrdenb(1'd1), \
+    .bgrcalovrd(5'd0), \
+    .debugtraceready(1'd0), \
+    .debugtraceclk(1'd0), \
+    .rcalenb(1'd0), \
+    .trigackout0(1'd0), \
+    .trigin0(1'd0), \
+    .ubenable(1'd1), \
+    .ubiolmbrst(1'd0), \
+    .ubmbrst(1'd0), \
+    .ubintr(12'd0), \
+    .ubrxuart(1'd0), \
+    .ctrlrsvdin0(16'd0), \
+    .ctrlrsvdin1(14'd0), \
+    .gpi(16'd0), \
+    .refclk0_clktestsig(1'd0), \
+    .refclk1_clktestsig(1'd0), \
+    .altclk(1'd0), \
+    .hsclk0_lcpllclkrsvd0(1'd0), \
+    .hsclk0_lcpllclkrsvd1(1'd0), \
+    .hsclk0_rpllclkrsvd0(1'd0), \
+    .hsclk0_rpllclkrsvd1(1'd0), \
+    .hsclk1_lcpllclkrsvd0(1'd0), \
+    .hsclk1_lcpllclkrsvd1(1'd0), \
+    .hsclk1_rpllclkrsvd0(1'd0), \
+    .hsclk1_rpllclkrsvd1(1'd0), \
+    .hsclk0_lcpllrsvd0(8'd0), \
+    .hsclk0_lcpllrsvd1(8'd0), \
+    .hsclk0_rpllrsvd0(8'd0), \
+    .hsclk0_rpllrsvd1(8'd0), \
+    .hsclk1_lcpllrsvd0(8'd0), \
+    .hsclk1_lcpllrsvd1(8'd0), \
+    .hsclk1_rpllrsvd0(8'd0), \
+    .hsclk1_rpllrsvd1(8'd0), \
+    .apb3clk(freerun_clk), \
+    .apb3paddr(apb_paddr), \
+    .apb3penable(apb_penable), \
+    .apb3presetn(1'b1), \
+    .apb3prdata(apb_prdata), \
+    .apb3psel(apb_psel), \
+    .apb3pslverr(apb_pslverr), \
+    .apb3pready(apb_pready), \
+    .apb3pwdata(apb_pwdata), \
+    .apb3pwrite(apb_pwrite), \
+    .pcielinkreachtarget(1'd0), \
+    .refclk0_gtrefclkpd(1'd0), \
+    .hsclk0_lcpllsdmtoggle(1'd0), \
+    .hsclk0_rpllsdmtoggle(1'd0), \
+    .hsclk0_lcpllresetbypassmode(1'd0), \
+    .hsclk0_rpllresetbypassmode(1'd0), \
+    .hsclk0_lcpllpd(1'd0), \
+    .hsclk0_rpllpd(1'd0), \
+    .hsclk0_lcpllresetmask(2'd3), \
+    .hsclk0_rpllresetmask(2'd3), \
+    .hsclk0_lcpllfbdiv(8'd0), \
+    .hsclk0_rpllfbdiv(8'd0), \
+    .hsclk0_lcpllrefclksel(3'd1), \
+    .hsclk0_rpllrefclksel(3'd1), \
+    .hsclk0_rplllock(rplllock[0]), \
+    .hsclk0_lcpllreset(1'd0), \
+    .hsclk0_rpllreset(1'd0), \
+    .refclk1_gtrefclkpd(1'd0), \
+    .hsclk1_lcpllsdmtoggle(1'd0), \
+    .hsclk1_rpllsdmtoggle(1'd0), \
+    .hsclk1_lcpllresetbypassmode(1'd0), \
+    .hsclk1_rpllresetbypassmode(1'd0), \
+    .hsclk1_lcpllpd(1'd0), \
+    .hsclk1_rpllpd(1'd0), \
+    .hsclk1_lcpllresetmask(2'd3), \
+    .hsclk1_rpllresetmask(2'd3), \
+    .hsclk1_lcpllfbdiv(8'd0), \
+    .hsclk1_rpllfbdiv(8'd0), \
+    .hsclk1_lcpllrefclksel(3'd1), \
+    .hsclk1_rpllrefclksel(3'd1), \
+    .hsclk1_rplllock(rplllock[1]), \
+    .hsclk1_lcpllreset(1'd0), \
+    .hsclk1_rpllreset(1'd0), \
+    .hsclk0_lcpllsdmdata(26'd18729921), \
+    .hsclk1_lcpllsdmdata(26'd32216807), \
+    .hsclk0_rpllsdmdata(26'd4535360), \
+    .hsclk1_rpllsdmdata(26'd4520949), \
+    .rxmarginclk(1'd0), \
+    .rxmarginreqcmd(4'd0), \
+    .rxmarginreqlanenum(2'd0), \
+    .rxmarginreqpayld(8'd0), \
+    .rxmarginreqreq(1'd0), \
+    .rxmarginresack(1'd0), \
+    .gtpowergood(gtpowergood), \
+    .pcieltssm(6'd0), \
+    .rxp(rxp_c), \
+    .rxn(rxn_c), \
+    .txp(txp_c), \
     .txn(txn_c)
-);
 
+if (|USED[1:0] && |USED[3:2]) begin : g_refclk2
+    omac_versal_gty_quad u_gt (
+        `OMAC_VGTQ_PORTS,
+        .GT_REFCLK1(refclk)
+    );
+end else begin : g_refclk1
+    omac_versal_gty_quad u_gt (
+        `OMAC_VGTQ_PORTS
+    );
+end
+
+`undef OMAC_VGTQ_PORTS
 `undef OMAC_VGTQ_CH
 
 endmodule

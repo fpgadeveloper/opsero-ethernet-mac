@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 #
-# test_gt.py <gty|gth|versal> [nframes] - run sim/gt/run_gt_sim.tcl (transceiver-level loop of the
+# test_gt.py <gty|gth|versal|versal_xh> [nframes] - run sim/gt/run_gt_sim.tcl (transceiver-level loop of the
 # quad wrapper with the vendor's GT simulation models) in one Vivado batch process and check
 # its "GT_SIM <fam> PASS" line. Build products: sim/build/gt_<fam> (or $SIM_BUILD/gt_<fam>).
 # Part of the regression only with sim/run_tests.py --gt (slow).
