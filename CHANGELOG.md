@@ -133,8 +133,9 @@ Work in progress; merged to `main` and tagged after hardware validation.
 - `omac_gt_versal_gty_quad` with the TX master (lane 0) on HSCLK1 and a lane on HSCLK0 (e.g.
   channels `{2 1}`): in the GT simulation the HSCLK0 lane comes up (block lock, link) but
   decodes every received block as bad, while the master's transmit line checks good and the
-  other direction passes. Open; until it is understood, put lane 0 on channels 0-1 when the
-  lanes span both half-quads (`{1 2}` and `{0 1 2}` pass).
+  other direction passes. A hardware design with channels `{2 1 0}` does not show it (all lanes
+  error-free at line rate); the simulation model is suspected, the cause is open (`{1 2}` and
+  `{0 1 2}` pass in simulation too).
 
 ## v0.1.0 (2026-11-05)
 

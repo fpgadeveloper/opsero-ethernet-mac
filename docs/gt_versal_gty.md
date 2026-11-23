@@ -148,9 +148,11 @@ runs and waits for the done flag.
   routes it to the PLLs without further constraints (placed and routed with `MGTREFCLK1` in the
   VCK190 FMCP1 design; `MGTREFCLK0` is not yet part of a placed design). A reference clock of
   another quad is not supported by this wrapper.
-* **Lanes on both half-quads:** keep lane 0 (the TX master) on HSCLK0 (channels 0-1). With the
-  master on HSCLK1 and a lane on HSCLK0 (channels `{2 1}`) the GT simulation brings the HSCLK0
-  lane up but every block it receives is bad; the cause is still open ([](roadmap.md)).
+* **Lanes on both half-quads:** with the TX master (lane 0) on HSCLK1 and a lane on HSCLK0
+  (channels `{2 1}`) the GT simulation brings the HSCLK0 lane up but every block it receives is
+  bad. A three-lane design with channels `{2 1 0}` on hardware does not show it (both HSCLK0
+  lanes and the HSCLK1 lane pass at line rate), so the simulation model is suspected; the cause
+  is still open ([](roadmap.md)). Lane 0 on HSCLK0 is the configuration without open points.
 
 ## Clock constraints
 
