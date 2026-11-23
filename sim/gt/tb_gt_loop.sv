@@ -184,11 +184,13 @@ for (genvar r = 0; r < NL; r++) begin : g_rx
     end
 end
 
-int fcs_err = 0, bad_blocks = 0;
+int fcs_err = 0, bad_blocks = 0, bad0 = 0, bad1 = 0;
 always @(posedge clk) begin
     if (|link_up) begin
         fcs_err    <= fcs_err + ev_fcs[0] + ev_fcs[1];
         bad_blocks <= bad_blocks + ((&link_up) ? (ev_bad_block[0] + ev_bad_block[1]) : 0);
+        bad0       <= bad0 + ((&link_up) ? ev_bad_block[0] : 0);
+        bad1       <= bad1 + ((&link_up) ? ev_bad_block[1] : 0);
     end
 end
 
@@ -291,8 +293,9 @@ initial begin
     join_any
     disable fork;
     repeat (100) @(posedge clk);
-    $display("TB_FRAMES rx0=%0d rx1=%0d err0=%0d err1=%0d fcs=%0d bad_blocks=%0d us=%0d",
-             rx_frames[0], rx_frames[1], rx_errors[0], rx_errors[1], fcs_err, bad_blocks, ($time - t0) / 1000);
+    $display("TB_FRAMES rx0=%0d rx1=%0d err0=%0d err1=%0d fcs=%0d bad_blocks=%0d (port 0 %0d, port 1 %0d) us=%0d",
+             rx_frames[0], rx_frames[1], rx_errors[0], rx_errors[1], fcs_err, bad_blocks, bad0, bad1,
+             ($time - t0) / 1000);
     $display("TB_RESULT pass=%0d", (rx_frames[0] == NFRAMES) && (rx_frames[1] == NFRAMES) &&
              (rx_errors[0] == 0) && (rx_errors[1] == 0) && (fcs_err == 0) && (bad_blocks == 0) && (&link_up) &&
              (wire_off >= 0) && (wire_ctrl == wire_blocks) && (wire_idle_ok == wire_blocks - 1));

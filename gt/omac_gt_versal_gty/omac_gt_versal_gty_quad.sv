@@ -521,11 +521,11 @@ assign qpll_lock = (!(|USED[1:0]) || rplllock[0]) && (!(|USED[3:2]) || rplllock[
 
 // The IP has one logical reference clock input per half-quad (PLL pair) that has lanes:
 // GT_REFCLK0 alone when the lanes are all on HSCLK0 (channels 0-1) or all on HSCLK1
-// (channels 2-3); GT_REFCLK0 (HSCLK0) and GT_REFCLK1 (HSCLK1) when there are lanes on both
-// halves (checked with gt_quad_base 1.1, Vivado 2025.2, for every channel set). Both are
-// driven by the one reference clock buffer: an open GT_REFCLK1 leaves the RPLL of HSCLK1
-// without a reference clock (its lanes never come up, and Vivado times their RXOUTCLK with
-// the APB3 clock).
+// (channels 2-3); GT_REFCLK0 and GT_REFCLK1 when there are lanes on both halves, one for each
+// half in the IP's protocol order (checked with gt_quad_base 1.1, Vivado 2025.2, for every
+// channel set). Both are driven by the one reference clock buffer: an open GT_REFCLK1 leaves
+// the RPLL of one half without a reference clock (its lanes never come up, and Vivado times
+// their RXOUTCLK with the APB3 clock).
 `define OMAC_VGTQ_PORTS \
     `OMAC_VGTQ_CH(0), \
     `OMAC_VGTQ_CH(1), \

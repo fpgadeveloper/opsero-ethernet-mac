@@ -10,8 +10,8 @@
 # (lane 0 = X0Y14 = gtwizard channel 1: a non-identity lane map); versal:
 # xcvc1902-vsva2197-2MP-e-S, omac_gt_versal_gty_quad on quad channels 1 and 0 (lane 0 =
 # channel 1: a non-identity lane map, lane 0's channel is the TX master); versal_xh: the
-# same on quad channels 2 and 1, one lane on each half-quad (HSCLK1 + HSCLK0: the IP then has
-# two reference clock inputs; lane 0 = channel 2, the TX master on HSCLK1). Prints one line
+# same on quad channels 1 and 2, one lane on each half-quad (HSCLK0 + HSCLK1: the IP then has
+# two reference clock inputs; lane 0 = channel 1, the TX master on HSCLK0). Prints one line
 # "GT_SIM <fam> PASS|FAIL ..." and the TB_ lines; sim/gt/test_gt.py wraps it for the
 # regression (sim/run_tests.py --gt). Slow: the GT models simulate every line bit.
 #
@@ -34,7 +34,7 @@ if {$fam eq "gty"} {
     set sites {1 0}
 } elseif {$fam eq "versal_xh"} {
     set part xcvc1902-vsva2197-2MP-e-S
-    set sites {2 1}
+    set sites {1 2}
 } else {
     error "run_gt_sim.tcl: family gty, gth, versal or versal_xh expected"
 }

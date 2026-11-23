@@ -111,6 +111,16 @@ Work in progress; merged to `main` and tagged after hardware validation.
   `omac_10g_quad_gth_zu7ev` (four omac_10g with hooks on the quad wrapper; `synth_ooc.tcl`
   extra `gtquad`).
 
+### Fixed
+
+- **gt/omac_gt_versal_gty:** with lanes on both half-quads (HSCLK0 and HSCLK1, e.g. quad
+  channels `{0 1 2}` or `{0 1 2 3}`) `gt_quad_base` has a second logical reference clock input,
+  `GT_REFCLK1`, which the wrapper left open: the RPLL of HSCLK1 had no reference clock and its
+  lanes could never come up (Vivado timed their `RXOUTCLK` with the APB3 clock). The wrapper
+  now drives `GT_REFCLK1` from the same reference clock buffer whenever the IP has it. New GT
+  simulation family `versal_xh` (lanes on channels 1 and 2, one per half-quad) in
+  `make sim-gt`.
+
 ### Not yet validated
 
 - `omac_gt_usp_gty_quad` and the two-lane / `MGTREFCLK1` configurations of the quad wrappers
@@ -120,6 +130,11 @@ Work in progress; merged to `main` and tagged after hardware validation.
 - omac_mdio on hardware; its Linux driver on a running kernel (compile-tested against AMD
   linux-xlnx 6.12 for arm64 and mainline 6.17).
 - omac_10g USXGMII against a real PHY.
+- `omac_gt_versal_gty_quad` with the TX master (lane 0) on HSCLK1 and a lane on HSCLK0 (e.g.
+  channels `{2 1}`): in the GT simulation the HSCLK0 lane comes up (block lock, link) but
+  decodes every received block as bad, while the master's transmit line checks good and the
+  other direction passes. Open; until it is understood, put lane 0 on channels 0-1 when the
+  lanes span both half-quads (`{1 2}` and `{0 1 2}` pass).
 
 ## v0.1.0 (2026-11-05)
 

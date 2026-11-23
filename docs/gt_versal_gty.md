@@ -60,7 +60,7 @@ differs):
 |---|---|---|
 | preset | `GTY-10GBASE-R` | per protocol |
 | line rate TX / RX | 10.3125 Gb/s | |
-| reference clock | 156.25 MHz (`TX/RX_REFCLK_FREQUENCY`), source `R0` | one logical reference clock input `GT_REFCLK0` |
+| reference clock | 156.25 MHz (`TX/RX_REFCLK_FREQUENCY`), source `R0` | one logical reference clock input per half-quad with lanes: `GT_REFCLK0`, plus `GT_REFCLK1` when there are lanes on both halves |
 | PLL | **RPLL** (TX and RX) | the preset chooses the LCPLL; changed (see below) |
 | TX / RX data encoding | `64B66B_ASYNC` (asynchronous gearbox) | `TXSEQUENCE` tied to 0 |
 | internal / user data width | **64 / 64** | the preset has 32 / 32 (312.5 MHz); 64 gives one 156.25 MHz user clock per direction |
@@ -139,22 +139,33 @@ runs and waits for the done flag.
   monitoring.
 * **Time base:** as on UltraScale+, `tx_usrclk2` is a fixed multiple of the reference clock and
   can be the design's time-of-day clock; it stops while `reset_all` is held.
-* **Reference clock input:** the IP has one logical input (`GT_REFCLK0`); the `IBUFDS_GTE5` sits
+* **Reference clock input:** the IP has one logical reference clock input per half-quad that
+  has lanes: `GT_REFCLK0` alone when every lane is on HSCLK0 (channels 0-1) or every lane is on
+  HSCLK1 (channels 2-3); `GT_REFCLK0` and `GT_REFCLK1`, one per half in the IP's protocol
+  order, when there are lanes on both halves, e.g. channels `{0 1 2}` or `{0 1 2 3}`
+  (gt_quad_base 1.1, every channel set checked). The wrapper drives every one of them from its single `IBUFDS_GTE5`, which sits
   on the pin of the design's constraints, `MGTREFCLK0` or `MGTREFCLK1` of the quad, and Vivado
-  routes it to the PLL without further constraints (placed and routed with `MGTREFCLK1` in the
+  routes it to the PLLs without further constraints (placed and routed with `MGTREFCLK1` in the
   VCK190 FMCP1 design; `MGTREFCLK0` is not yet part of a placed design). A reference clock of
   another quad is not supported by this wrapper.
+* **Lanes on both half-quads:** keep lane 0 (the TX master) on HSCLK0 (channels 0-1). With the
+  master on HSCLK1 and a lane on HSCLK0 (channels `{2 1}`) the GT simulation brings the HSCLK0
+  lane up but every block it receives is bad; the cause is still open ([](roadmap.md)).
 
 ## Clock constraints
 
 * **Reference clock:** `create_clock -period 6.400` on the reference clock pin and its
   `PACKAGE_PIN`; the serial pins' package pins select the quad.
-* **Transceiver output clocks:** Vivado creates them itself from the quad's configuration:
+* **Transceiver output clocks:** Vivado derives them itself from the reference clock and the
+  quad's configuration:
   `ch<n>_txoutclk` and `ch<n>_rxoutclk` (156.25 MHz) on the `CH<n>_TXOUTCLK` /
   `CH<n>_RXOUTCLK` pins of the used channels (`<n>` = the quad channel; only the master lane's
   `TXOUTCLK` drives logic). The `BUFG_GT`s propagate them to `tx_usrclk2` and `rx_usrclk2[l]`;
   constrain the crossings by these names (or through the pins, as on UltraScale+). A
-  `create_clock` on those pins only replaces the derived clock (warning Timing 38-3).
+  `create_clock` on those pins only replaces the derived clock (warning Timing 38-3). A lane
+  whose RPLL has no reference clock gets no derived clock: Vivado then propagates the APB3
+  clock (`freerun_clk`) to its `RXOUTCLK` (`report_clocks` shows it on the `CH<n>_RXOUTCLK`
+  pin), the signature of an unconnected reference clock input.
 * **Clock crossings:** as on UltraScale+ ([](gt_usp_gth.md#clock-constraints)): the TX user
   clock and the recovered clocks are asynchronous; bound the crossings with
   `set_max_delay -datapath_only` of one `clk` period or with asynchronous clock groups.
